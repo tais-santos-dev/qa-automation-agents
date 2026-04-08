@@ -1,0 +1,296 @@
+name: Playwright Tests — OrangeHRM
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:         # Allow manual trigger from GitHub UI
+  schedule:
+    - cron: '0 9 * * *'    # Regression diário às 06:00 BRT (09:00 UTC)
+    - cron: '30 9 * * *'   # Smoke diário às 06:30 BRT (09:30 UTC)
+    - cron: '0 6 * * 1'    # Mutation testing — toda segunda-feira às 03:00 BRT (06:00 UTC)
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true  # Cancel stale runs on new pushes
+
+env:
+  BASE_URL: ${{ secrets.BASE_URL || 'https://opensource-demo.orangehrmlive.com' }}
+  ADMIN_USER: ${{ secrets.ADMIN_USER || 'Admin' }}
+  ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD || 'admin123' }}
+
+jobs:
+  # ─── Lint & Type Check ──────────────────────────────────────────────────────
+  typecheck:
+    name: TypeScript Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run TypeScript type check
+        run: npm run typecheck
+
+  # ─── E2E Tests ──────────────────────────────────────────────────────────────
+  e2e-tests:
+    name: E2E Tests (${{ matrix.project }})
+    runs-on: ubuntu-latest
+    needs: typecheck
+    strategy:
+      fail-fast: false
+      matrix:
+        project:
+          - chromium:authenticated
+          - chromium:unauthenticated
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers & system dependencies
+        run: npx playwright install --with-deps chromium
+
+      - name: Create .env file
+        run: |
+          echo "BASE_URL=${{ env.BASE_URL }}" >> .env
+          echo "ADMIN_USER=${{ env.ADMIN_USER }}" >> .env
+          echo "ADMIN_PASSWORD=${{ env.ADMIN_PASSWORD }}" >> .env
+          echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> .env
+
+      - name: Determine test suite (schedule)
+        id: suite
+        run: |
+          if [ "${{ github.event.schedule }}" = "0 9 * * *" ]; then
+            echo "grep=@regression" >> $GITHUB_OUTPUT
+            echo "label=Regression" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event.schedule }}" = "30 9 * * *" ]; then
+            echo "grep=@smoke" >> $GITHUB_OUTPUT
+            echo "label=Smoke" >> $GITHUB_OUTPUT
+          else
+            echo "grep=" >> $GITHUB_OUTPUT
+            echo "label=Full" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Playwright tests (${{ steps.suite.outputs.label }})
+        id: run_tests
+        run: |
+          if [ -n "${{ steps.suite.outputs.grep }}" ]; then
+            npx playwright test --project="${{ matrix.project }}" --grep "${{ steps.suite.outputs.grep }}"
+          else
+            npx playwright test --project="${{ matrix.project }}"
+          fi
+        continue-on-error: true
+
+      - name: Upload HTML Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ matrix.project }}
+          path: playwright-report/
+          retention-days: 30
+
+      - name: Upload Allure Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-${{ matrix.project }}
+          path: allure-results/
+          retention-days: 30
+
+      - name: Upload Test Videos & Traces (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.project }}
+          path: test-results/
+          retention-days: 7
+
+      - name: Salvar histórico de execução
+        if: always()
+        run: |
+          mkdir -p test-results/history
+          if [ -f test-results/results.json ]; then
+            cp test-results/results.json "test-results/history/results-$(date +%Y%m%d-%H%M%S).json"
+          fi
+
+      - name: Upload histórico (para FlakyTestDetector e QualityTrendReporter)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-history-${{ matrix.project }}-${{ github.run_number }}
+          path: test-results/history/
+          retention-days: 90
+
+      - name: Upload results.json (para job de notificação)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-json-${{ matrix.project }}
+          path: test-results/results.json
+          retention-days: 1
+
+      - name: Fail job if tests failed
+        if: steps.run_tests.outcome == 'failure'
+        run: exit 1
+
+  # ─── Allure Report Publish ───────────────────────────────────────────────────
+  allure-report:
+    name: Generate & Publish Allure Report
+    runs-on: ubuntu-latest
+    needs: e2e-tests
+    if: always()
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all Allure results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: allure-results-*
+          path: allure-results
+          merge-multiple: true
+
+      - name: Install Allure CLI
+        run: npm install -g allure-commandline
+
+      - name: Generate Allure Report
+        run: allure generate allure-results --clean -o allure-report
+
+      - name: Upload Allure Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report-combined
+          path: allure-report/
+          retention-days: 30
+
+  # ─── AI Notifications & Analysis ────────────────────────────────────────────
+  notify-and-analyze:
+    name: AI Analysis & Notify
+    runs-on: ubuntu-latest
+    needs: e2e-tests
+    if: always()
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download results (chromium:authenticated)
+        uses: actions/download-artifact@v4
+        with:
+          name: results-json-chromium:authenticated
+          path: test-results/
+        continue-on-error: true
+
+      - name: Download results (chromium:unauthenticated)
+        uses: actions/download-artifact@v4
+        with:
+          name: results-json-chromium:unauthenticated
+          path: test-results-unauth/
+        continue-on-error: true
+
+      - name: Mesclar resultados
+        run: |
+          # Usa authenticated como principal; se faltar, usa unauthenticated
+          if [ ! -f test-results/results.json ] && [ -f test-results-unauth/results.json ]; then
+            cp test-results-unauth/results.json test-results/results.json
+          fi
+
+      - name: Correlacionar causas raiz (RootCauseCorrelator)
+        if: always()
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: npm run correlate || true
+
+      - name: Enviar notificação para Slack/Teams (SlackTeamsReporter)
+        if: always()
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        run: npm run notify || true
+
+  # ─── Mutation Testing (semanal, via schedule) ────────────────────────────────
+  mutation-testing:
+    name: Mutation Testing (Score de Qualidade dos Testes)
+    runs-on: ubuntu-latest
+    # Roda apenas no schedule semanal ou manualmente — não em cada PR (caro e lento)
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Stryker
+        run: npm run mutation:install
+
+      - name: Create .env file
+        run: |
+          echo "BASE_URL=${{ env.BASE_URL }}" >> .env
+          echo "ADMIN_USER=${{ env.ADMIN_USER }}" >> .env
+          echo "ADMIN_PASSWORD=${{ env.ADMIN_PASSWORD }}" >> .env
+
+      - name: Run Mutation Testing
+        run: npm run mutation
+        continue-on-error: true  # Não bloqueia CI — apenas reporta
+
+      - name: Upload Mutation Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: reports/mutation/
+          retention-days: 30
+
+      - name: Check mutation score threshold
+        if: always()
+        run: |
+          if [ -f reports/mutation/mutation-report.json ]; then
+            SCORE=$(node -e "
+              const r = require('./reports/mutation/mutation-report.json');
+              const killed = r.files ? Object.values(r.files).reduce((s,f) => s + f.mutants.filter(m => m.status === 'Killed').length, 0) : 0;
+              const total = r.files ? Object.values(r.files).reduce((s,f) => s + f.mutants.length, 0) : 1;
+              console.log(Math.round((killed/total)*100));
+            ")
+            echo "Mutation score: ${SCORE}%"
+            if [ "$SCORE" -lt 50 ]; then
+              echo "⚠️ Mutation score abaixo de 50% — use @mutation-validator para análise"
+            fi
+          fi

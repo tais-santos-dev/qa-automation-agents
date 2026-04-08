@@ -1,0 +1,50 @@
+{
+  "name": "orangehrm-playwright-automation",
+  "version": "1.0.0",
+  "description": "Professional QA Automation Boilerplate for OrangeHRM using Playwright + TypeScript",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:ui": "playwright test --ui",
+    "test:auth": "playwright test src/tests/smoke/auth",
+    "test:pim": "playwright test src/tests/smoke/pim src/tests/regression/pim",
+    "test:smoke": "playwright test --grep @smoke",
+    "test:regression": "playwright test --grep @regression",
+    "report:html": "playwright show-report",
+    "report:allure": "allure generate allure-results --clean && allure open",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf allure-results allure-report test-results playwright-report",
+    "analyze": "npx ts-node --project tsconfig.json src/agents/FailureAnalyzerAgent.ts",
+    "analyze:run": "npx ts-node --project tsconfig.json src/agents/FailureAnalyzerAgent.ts --run-tests",
+    "flaky": "npx ts-node --project tsconfig.json src/agents/FlakyTestDetector.ts",
+    "generate": "npx ts-node --project tsconfig.json src/agents/TestGeneratorAgent.ts",
+    "heal": "npx ts-node --project tsconfig.json src/agents/SelectorHealerAgent.ts",
+    "data-gen": "npx ts-node --project tsconfig.json src/agents/TestDataGeneratorAgent.ts",
+    "cluster": "npx ts-node --project tsconfig.json src/agents/RootCauseClusterAgent.ts",
+    "trend": "npx ts-node --project tsconfig.json src/agents/QualityTrendReporterAgent.ts",
+    "explore": "npx ts-node --project tsconfig.json src/agents/ExploratoryAgent.ts",
+    "correlate": "npx ts-node --project tsconfig.json src/agents/RootCauseCorrelator.ts",
+    "report:trend": "npx ts-node --project tsconfig.json src/agents/QualityTrendReporter.ts",
+    "notify": "npx ts-node --project tsconfig.json src/agents/SlackTeamsReporter.ts",
+    "eval": "npx ts-node --project tsconfig.json src/agents/AIEvaluatorAgent.ts",
+    "eval:all": "npx ts-node --project tsconfig.json src/agents/AIEvaluatorAgent.ts --agent=failure-analyzer --save && npx ts-node --project tsconfig.json src/agents/AIEvaluatorAgent.ts --agent=test-reviewer --save",
+    "synthetic": "npx ts-node --project tsconfig.json src/agents/SyntheticUserAgent.ts",
+    "synthetic:all": "npx ts-node --project tsconfig.json src/agents/SyntheticUserAgent.ts --persona=all",
+    "mutation": "npx stryker run",
+    "mutation:install": "npm install --save-dev @stryker-mutator/core @stryker-mutator/typescript-checker"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.43.0",
+    "@types/node": "^20.12.0",
+    "allure-playwright": "^3.0.0",
+    "rimraf": "^5.0.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.82.0",
+    "@faker-js/faker": "^8.4.1",
+    "dotenv": "^16.4.5"
+  }
+}

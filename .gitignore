@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.example
+test-results/
+playwright-report/
+allure-results/
+allure-report/
+auth/
+*.local
+src/generated/
+reports/

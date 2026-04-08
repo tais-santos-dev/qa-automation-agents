@@ -1,0 +1,60 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "packageManager": "npm",
+  "testRunner": "command",
+  "testRunnerNodeArgs": [],
+
+  "commandRunner": {
+    "command": "npx playwright test --reporter=json"
+  },
+
+  "checkers": ["typescript"],
+  "tsconfigFile": "tsconfig.json",
+
+  "mutate": [
+    "src/pages/**/*.ts",
+    "src/components/**/*.ts",
+    "src/utils/**/*.ts",
+    "src/factories/**/*.ts",
+    "!src/pages/**/*.spec.ts",
+    "!src/**/*.d.ts"
+  ],
+
+  "reporters": ["html", "json", "progress"],
+  "htmlReporter": {
+    "fileName": "reports/mutation/mutation-report.html"
+  },
+  "jsonReporter": {
+    "fileName": "reports/mutation/mutation-report.json"
+  },
+
+  "thresholds": {
+    "high": 80,
+    "low": 60,
+    "break": 50
+  },
+
+  "timeoutMS": 60000,
+  "timeoutFactor": 1.5,
+  "concurrency": 1,
+
+  "incremental": true,
+  "incrementalFile": "reports/mutation/.stryker-incremental.json",
+
+  "ignorePatterns": [
+    "node_modules",
+    "dist",
+    "auth",
+    "allure-results",
+    "playwright-report",
+    "test-results",
+    "reports",
+    "src/generated"
+  ],
+
+  "plugins": [
+    "@stryker-mutator/typescript-checker"
+  ],
+
+  "_comment": "Instalar dependências: npm install --save-dev @stryker-mutator/core @stryker-mutator/typescript-checker"
+}
