@@ -2,6 +2,8 @@
 
 > Framework de automação de testes **profissional** para [OrangeHRM](https://opensource-demo.orangehrmlive.com/) com **Playwright + TypeScript**, Page Object Model, **sistema completo de Agentes de IA** para geração, análise e orquestração do ciclo de qualidade.
 
+🌐 **Português** | [English](README.en.md)
+
 ---
 
 ## Índice
