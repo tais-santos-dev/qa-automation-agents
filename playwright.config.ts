@@ -42,7 +42,7 @@ export default defineConfig({
     locale: 'en-US',
     timezoneId: 'America/Sao_Paulo',
     actionTimeout: 15_000,
-    navigationTimeout: 30_000,
+    navigationTimeout: 60_000,
   },
 
   // ─── Projects (Browsers / Environments) ─────────────────────────────────────

@@ -15,8 +15,7 @@ export class TableComponent extends BaseComponent {
   }
 
   private get noRecordsText() {
-    // "No Records Found" is rendered inside the .oxd-table container
-    return this.root.locator('.oxd-text', { hasText: 'No Records Found' });
+    return this.root.getByText('No Records Found', { exact: true });
   }
 
   constructor(page: Page) {
