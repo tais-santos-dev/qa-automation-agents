@@ -11,4 +11,6 @@ export enum AppRoute {
   RECRUITMENT = '/web/index.php/recruitment/viewCandidates',
   MY_INFO = '/web/index.php/pim/viewMyDetails',
   ADMIN = '/web/index.php/admin/viewAdminModule',
+  ADMIN_VIEW_USERS = '/web/index.php/admin/viewSystemUsers',
+  ADMIN_ADD_USER = '/web/index.php/admin/saveSystemUser',
 }

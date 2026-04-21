@@ -12,7 +12,7 @@ import { AppRoute } from '../constants/Routes';
 import { SidebarMenu } from '../constants/SidebarMenu';
 
 export class PimPage extends BasePage {
-  // ─── Composed Components (private — specs não acessam internos) ───────────
+  // ─── Composed Components (private — specs don't access internals) ──────────
   private readonly sidebar: SidebarComponent;
   private readonly employeeTable: TableComponent;
 
@@ -22,7 +22,7 @@ export class PimPage extends BasePage {
   }
 
   private get searchNameInput() {
-    // Escopado pelo container do campo para evitar seletor posicional
+    // Scoped by the field container to avoid positional selectors
     return this.page.locator('.oxd-input-group')
       .filter({ hasText: 'Employee Name' })
       .locator('input');
@@ -90,6 +90,14 @@ export class PimPage extends BasePage {
    */
   async hasNoResults(): Promise<boolean> {
     return this.employeeTable.hasNoRecords();
+  }
+
+  async expectNoResults(): Promise<void> {
+    await this.employeeTable.expectNoRecords();
+  }
+
+  async expectHasResults(): Promise<void> {
+    await this.employeeTable.expectHasRecords();
   }
 
   /**

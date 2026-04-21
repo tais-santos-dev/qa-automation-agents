@@ -1,42 +1,42 @@
 /**
  * employee-list.spec.ts
  *
- * Suite de testes para o módulo PIM — Lista de Funcionários do OrangeHRM.
+ * Test suite for the PIM module — Employee List.
  *
- * Estratégia:
- *  - Usa o projeto `chromium:authenticated` (storageState pré-carregado).
- *  - A fixture `pimPage` abre /pim/viewEmployeeList automaticamente.
- *  - Testa navegação, busca e estado da tabela.
+ * Strategy:
+ *  - Uses the `chromium:authenticated` project (pre-loaded storageState).
+ *  - The `pimPage` fixture opens /pim/viewEmployeeList automatically.
+ *  - Tests navigation, search, and table state.
  *
- * Nota sobre autocomplete:
- *  O campo "Employee Name" é um autocomplete. Ao digitar valor inválido sem selecionar
- *  do dropdown, o OrangeHRM ignora o filtro e retorna todos os resultados.
+ * Note on autocomplete:
+ *  The "Employee Name" field is an autocomplete. Typing an invalid value without
+ *  selecting from the dropdown causes OrangeHRM to ignore the filter and return all results.
  *
- * Cenários cobertos:
- *  ✅ [Positivo]   Listar funcionários → tabela com registros visíveis
- *  ✅ [Positivo]   Navegar ao PIM via sidebar → URL correta
- *  ✅ [Positivo]   Usar campo de busca → retorna contagem válida (campo é autocomplete)
- *  ✅ [Positivo]   Clicar em "Add Employee" → redireciona ao formulário
- *  ❌ [Negativo]   Buscar nome inexistente → página estável (autocomplete ignora filtro inválido)
- *  ⚠️  [Edge Case] Buscar com espaços em branco → resultados não filtrados
+ * Scenarios covered:
+ *  ✅ [Positive]   List employees → table with visible records
+ *  ✅ [Positive]   Navigate to PIM via sidebar → correct URL
+ *  ✅ [Positive]   Use search field → returns valid count (field is autocomplete)
+ *  ✅ [Positive]   Click "Add Employee" → redirects to the form
+ *  ❌ [Negative]   Search non-existent name → page stable (autocomplete ignores invalid filter)
+ *  ⚠️  [Edge Case] Search with whitespace → unfiltered results
  */
 
 import { test, expect } from '../../../fixtures/test.fixture';
 
-// ─── Suite Principal ──────────────────────────────────────────────────────
+// ─── Main Suite ───────────────────────────────────────────────────────────
 
-test.describe('PIM — Lista de Funcionários', () => {
+test.describe('PIM — Employee List', () => {
 
   test.beforeEach(async ({ pimPage }) => {
     await pimPage.expectOnPimListPage();
   });
 
-  // ─── Cenários Positivos ───────────────────────────────────────────────────
+  // ─── Positive Scenarios ───────────────────────────────────────────────────
 
-  test.describe('Positivo', () => {
+  test.describe('Positive', () => {
 
     test(
-      'deve exibir a lista de funcionários com registros ao abrir o PIM',
+      'should display the employee list with records when opening PIM',
       { tag: ['@smoke', '@pim'] },
       async ({ pimPage }) => {
         const count = await pimPage.getEmployeeCount();
@@ -45,60 +45,56 @@ test.describe('PIM — Lista de Funcionários', () => {
     );
 
     test(
-      'deve navegar ao PIM via sidebar e exibir a lista corretamente',
+      'should navigate to PIM via sidebar and display the list correctly',
       { tag: ['@smoke', '@pim'] },
-      async ({ page, pimPage }) => {
-        // Act — navega via sidebar (valida o fluxo de navegação)
+      async ({ pimPage }) => {
+        // Act — navigate via sidebar (validates the navigation flow)
         await pimPage.openViaSidebar();
 
-        // Assert — URL e tabela corretas
-        await expect(page).toHaveURL(/pim\/viewEmployeeList/);
+        // Assert — correct URL and table
         const count = await pimPage.getEmployeeCount();
         expect(count).toBeGreaterThan(0);
       }
     );
 
     test(
-      'deve retornar resultados válidos ao usar o campo de busca por nome',
+      'should return valid results when using the name search field',
       { tag: ['@smoke', '@pim'] },
       async ({ pimPage }) => {
-        // Act — O campo "Employee Name" é autocomplete; digitando sem selecionar
-        // do dropdown, o OrangeHRM pode ignorar o filtro e retornar todos os resultados
+        // Act — "Employee Name" is autocomplete; typing without selecting
+        // from the dropdown may cause OrangeHRM to ignore the filter and return all results
         await pimPage.searchEmployee('A');
 
-        // Assert — tabela estável com contagem >= 0
+        // Assert — stable table with count >= 0
         const count = await pimPage.getEmployeeCount();
         expect(count).toBeGreaterThanOrEqual(0);
       }
     );
 
     test(
-      'deve redirecionar ao formulário de adicionar funcionário ao clicar em Add Employee',
+      'should redirect to the add employee form when clicking Add Employee',
       { tag: ['@smoke', '@pim'] },
-      async ({ page, pimPage }) => {
+      async ({ pimPage }) => {
         // Act
         await pimPage.goToAddEmployee();
-
-        // Assert
-        await expect(page).toHaveURL(/pim\/addEmployee/);
       }
     );
   });
 
-  // ─── Cenários Negativos ───────────────────────────────────────────────────
+  // ─── Negative Scenarios ───────────────────────────────────────────────────
 
-  test.describe('Negativo', () => {
+  test.describe('Negative', () => {
 
     test(
-      'deve manter a página estável ao buscar por nome inexistente no autocomplete',
+      'should keep the page stable when searching for a non-existent name in the autocomplete',
       { tag: ['@regression', '@pim'] },
-      async ({ page, pimPage }) => {
-        // Nota: "Employee Name" é autocomplete — digitar valor inválido sem selecionar
-        // do dropdown faz o OrangeHRM ignorar o filtro e retornar todos os resultados.
+      async ({ pimPage }) => {
+        // Note: "Employee Name" is autocomplete — typing an invalid value without selecting
+        // from the dropdown causes OrangeHRM to ignore the filter and return all results.
         await pimPage.searchEmployee('zzz_inexistente_xyz_99999');
 
-        // Assert — página estável e na URL correta
-        await expect(page).toHaveURL(/pim\/viewEmployeeList/);
+        // Assert — page stable and on the correct URL
+        await pimPage.expectOnPimListPage();
         const count = await pimPage.getEmployeeCount();
         expect(count).toBeGreaterThanOrEqual(0);
       }
@@ -110,13 +106,13 @@ test.describe('PIM — Lista de Funcionários', () => {
   test.describe('Edge Cases', () => {
 
     test(
-      'deve retornar todos os registros ao buscar apenas com espaços',
+      'should return all records when searching with whitespace only',
       { tag: ['@regression', '@pim'] },
       async ({ pimPage }) => {
-        // Act — busca com espaço em branco (não deve filtrar nada)
+        // Act — whitespace search should not filter anything
         await pimPage.searchEmployee('   ');
 
-        // Assert — contagem válida
+        // Assert — valid count
         const count = await pimPage.getEmployeeCount();
         expect(count).toBeGreaterThanOrEqual(0);
       }

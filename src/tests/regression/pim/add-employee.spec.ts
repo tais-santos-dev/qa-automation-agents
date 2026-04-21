@@ -1,44 +1,46 @@
 /**
  * add-employee.spec.ts
  *
- * Suite de testes para o fluxo de criação de funcionário no módulo PIM.
+ * Test suite for the employee creation flow in the PIM module.
  *
- * Estratégia:
- *  - Usa `chromium:authenticated` (sessão pré-autenticada via storageState).
- *  - A fixture `addEmployeePage` abre /pim/addEmployee automaticamente.
- *  - Usa EmployeeFactory para gerar dados únicos por execução, evitando
- *    conflitos na instância demo compartilhada.
+ * Strategy:
+ *  - Uses `chromium:authenticated` (pre-authenticated session via storageState).
+ *  - The `addEmployeePage` fixture opens /pim/addEmployee automatically.
+ *  - Uses EmployeeFactory to generate unique data per run, avoiding
+ *    conflicts on the shared demo instance.
  *
- * Cenários cobertos:
- *  ✅ [Positivo]   Criar funcionário com dados completos → toast de sucesso
- *  ✅ [Positivo]   Criar funcionário sem login details → salva apenas dados pessoais
- *  ❌ [Negativo]   Submeter formulário vazio → erros de campo obrigatório
- *  ❌ [Negativo]   Criar com senhas diferentes → erro de confirmação
- *  ⚠️  [Edge Case] Nome com comprimento máximo → campo aceita sem truncar
+ * Scenarios covered:
+ *  ✅ [Positive]   Create employee with full data → success toast
+ *  ✅ [Positive]   Create employee without login details → saves personal data only
+ *  ❌ [Negative]   Submit empty form → required field errors
+ *  ❌ [Negative]   Create with mismatched passwords → confirmation error
+ *  ⚠️  [Edge Case] Name at maximum length → field accepts without truncating
  */
 
 import { test, expect } from '../../../fixtures/test.fixture';
 import { EmployeeFactory } from '../../../factories/EmployeeFactory';
 import { ErrorMessage, SuccessMessage } from '../../../constants/Messages';
 
-// ─── Constantes de teste ─────────────────────────────────────────────────────
+// ─── Test Constants ───────────────────────────────────────────────────────────
 
 const KNOWN_PASSWORD = 'SenhaCorreta@1';
+const MISMATCHED_PASSWORD = 'SenhaDiferente@2';
+const MAX_FIRST_NAME_LENGTH = 30;
 
-// ─── Suite Principal ──────────────────────────────────────────────────────
+// ─── Main Suite ───────────────────────────────────────────────────────────
 
-test.describe('PIM — Adicionar Funcionário', () => {
+test.describe('PIM — Add Employee', () => {
 
   test.beforeEach(async ({ addEmployeePage }) => {
     await addEmployeePage.expectOnAddEmployeePage();
   });
 
-  // ─── Cenários Positivos ───────────────────────────────────────────────────
+  // ─── Positive Scenarios ───────────────────────────────────────────────────
 
-  test.describe('Positivo', () => {
+  test.describe('Positive', () => {
 
     test(
-      'deve criar funcionário com dados completos e exibir toast de sucesso',
+      'should create an employee with full data and display a success toast',
       { tag: ['@regression', '@pim'] },
       async ({ addEmployeePage }) => {
         // Arrange
@@ -47,19 +49,19 @@ test.describe('PIM — Adicionar Funcionário', () => {
         // Act
         await addEmployeePage.createEmployee(employee, true);
 
-        // Assert — toast de sucesso e redirecionamento para o perfil
+        // Assert — success toast and redirect to the profile
         await addEmployeePage.expectSuccessToast(SuccessMessage.EMPLOYEE_SAVED);
       }
     );
 
     test(
-      'deve criar funcionário sem login details e salvar somente dados pessoais',
+      'should create an employee without login details and save personal data only',
       { tag: ['@regression', '@pim'] },
       async ({ addEmployeePage }) => {
         // Arrange
         const employee = EmployeeFactory.build();
 
-        // Act — createEmployee com createLogin = false
+        // Act — createEmployee with createLogin = false
         await addEmployeePage.createEmployee(employee, false);
 
         // Assert
@@ -68,37 +70,37 @@ test.describe('PIM — Adicionar Funcionário', () => {
     );
   });
 
-  // ─── Cenários Negativos ───────────────────────────────────────────────────
+  // ─── Negative Scenarios ───────────────────────────────────────────────────
 
-  test.describe('Negativo', () => {
+  test.describe('Negative', () => {
 
     test(
-      'deve exibir erros de campo obrigatório ao submeter formulário vazio',
+      'should display required field errors when submitting an empty form',
       { tag: ['@regression', '@pim'] },
       async ({ addEmployeePage }) => {
-        // Act — tenta salvar sem preencher nada
+        // Act — attempt to save without filling anything
         await addEmployeePage.clickSave();
 
-        // Assert — ao menos um erro de campo obrigatório
+        // Assert — at least one required field error
         const firstError = await addEmployeePage.getFirstValidationError();
         expect(firstError).toContain(ErrorMessage.REQUIRED_FIELD);
       }
     );
 
     test(
-      'deve exibir erro de confirmação ao preencher senhas diferentes',
+      'should display a confirmation error when filling mismatched passwords',
       { tag: ['@regression', '@pim'] },
       async ({ addEmployeePage }) => {
-        // Arrange — dados com senha e confirmação divergentes
+        // Arrange — data with mismatched password and confirmation
         const employee = EmployeeFactory.build({ password: KNOWN_PASSWORD });
-        const employeeWithWrongConfirm = { ...employee, confirmPassword: 'SenhaDiferente@2' };
+        const employeeWithWrongConfirm = { ...employee, confirmPassword: MISMATCHED_PASSWORD };
 
         // Act
         await addEmployeePage.fillPersonalDetails(employeeWithWrongConfirm);
         await addEmployeePage.fillLoginDetails(employeeWithWrongConfirm);
         await addEmployeePage.clickSave();
 
-        // Assert — mensagem específica de senhas não coincidentes
+        // Assert — specific password mismatch message
         const error = await addEmployeePage.getFirstValidationError();
         expect(error).toContain(ErrorMessage.PASSWORD_MISMATCH);
       }
@@ -110,17 +112,17 @@ test.describe('PIM — Adicionar Funcionário', () => {
   test.describe('Edge Cases', () => {
 
     test(
-      'deve aceitar firstName com comprimento próximo do máximo permitido',
+      'should accept a firstName near the maximum allowed length',
       { tag: ['@regression', '@pim'] },
       async ({ addEmployeePage }) => {
-        // Arrange — nome com 30 caracteres (próximo do limite do OrangeHRM)
-        const longName = 'A'.repeat(30);
+        // Arrange — name with MAX_FIRST_NAME_LENGTH characters (near OrangeHRM limit)
+        const longName = 'A'.repeat(MAX_FIRST_NAME_LENGTH);
         const employee = EmployeeFactory.build({ firstName: longName });
 
         // Act
         await addEmployeePage.fillPersonalDetails(employee);
 
-        // Assert — campo deve aceitar o valor sem truncar
+        // Assert — field should accept the value without truncating
         const value = await addEmployeePage.getFirstNameValue();
         expect(value).toBe(longName);
       }

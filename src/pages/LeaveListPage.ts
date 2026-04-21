@@ -1,10 +1,10 @@
 /**
  * LeaveListPage.ts
  *
- * Page Object para o módulo de Leave — Lista de Solicitações de Licença.
- * Encapsula todas as interações em /web/index.php/leave/viewLeaveList.
+ * Page Object for the Leave module — Leave Request List.
+ * Encapsulates all interactions at /web/index.php/leave/viewLeaveList.
  *
- * Princípio: expõe ações semânticas, não locators brutos.
+ * Principle: exposes semantic actions, not raw locators.
  */
 import { Page, expect } from '@playwright/test';
 import { BasePage } from '../utils/BasePage';
@@ -12,7 +12,7 @@ import { TableComponent } from '../components/TableComponent';
 import { AppRoute } from '../constants/Routes';
 
 export class LeaveListPage extends BasePage {
-  // ─── Components (private — specs não acessam internos) ────────────────────
+  // ─── Components (private — specs don't access internals) ─────────────────
   private readonly leaveTable: TableComponent;
 
   // ─── Locators ─────────────────────────────────────────────────────────────
@@ -34,13 +34,13 @@ export class LeaveListPage extends BasePage {
     this.leaveTable = new TableComponent(page);
   }
 
-  // ─── Navegação ────────────────────────────────────────────────────────────
+  // ─── Navigation ───────────────────────────────────────────────────────────
 
   async open(): Promise<void> {
     await this.navigate(AppRoute.LEAVE);
   }
 
-  // ─── Ações ────────────────────────────────────────────────────────────────
+  // ─── Actions ──────────────────────────────────────────────────────────────
 
   async search(): Promise<void> {
     await this.click(this.searchButton);
@@ -52,7 +52,7 @@ export class LeaveListPage extends BasePage {
     await this.waitForPageLoad();
   }
 
-  // ─── Leitores ─────────────────────────────────────────────────────────────
+  // ─── Readers ──────────────────────────────────────────────────────────────
 
   async getPageTitle(): Promise<string> {
     return this.getText(this.pageTitle);
@@ -66,11 +66,19 @@ export class LeaveListPage extends BasePage {
     return this.leaveTable.hasNoRecords();
   }
 
-  // ─── Asserções ────────────────────────────────────────────────────────────
+  // ─── Assertions ───────────────────────────────────────────────────────────
 
   async expectPageLoaded(): Promise<void> {
     await this.expectUrlContains('leave/viewLeaveList');
     await expect(this.searchButton).toBeVisible();
+  }
+
+  async expectNoResults(): Promise<void> {
+    await this.leaveTable.expectNoRecords();
+  }
+
+  async expectHasResults(): Promise<void> {
+    await this.leaveTable.expectHasRecords();
   }
 
   async expectTableVisible(): Promise<void> {

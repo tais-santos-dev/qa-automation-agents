@@ -1,10 +1,10 @@
 /**
  * AdminPage.ts
  *
- * Page Object para o módulo Admin — Gestão de Usuários do OrangeHRM.
- * Encapsula todas as interações em /web/index.php/admin/viewAdminModule.
+ * Page Object for the Admin module — User Management.
+ * Encapsulates all interactions at /web/index.php/admin/viewAdminModule.
  *
- * Princípio: expõe ações semânticas, não locators brutos.
+ * Principle: exposes semantic actions, not raw locators.
  */
 import { Page, expect } from '@playwright/test';
 import { BasePage } from '../utils/BasePage';
@@ -12,7 +12,7 @@ import { TableComponent } from '../components/TableComponent';
 import { AppRoute } from '../constants/Routes';
 
 export class AdminPage extends BasePage {
-  // ─── Components (private — specs não acessam internos) ────────────────────
+  // ─── Components (private — specs don't access internals) ─────────────────
   private readonly userTable: TableComponent;
 
   // ─── Locators ─────────────────────────────────────────────────────────────
@@ -43,13 +43,13 @@ export class AdminPage extends BasePage {
     this.userTable = new TableComponent(page);
   }
 
-  // ─── Navegação ────────────────────────────────────────────────────────────
+  // ─── Navigation ───────────────────────────────────────────────────────────
 
   async open(): Promise<void> {
     await this.navigate(AppRoute.ADMIN);
   }
 
-  // ─── Ações ────────────────────────────────────────────────────────────────
+  // ─── Actions ──────────────────────────────────────────────────────────────
 
   async searchByUsername(username: string): Promise<void> {
     await this.fill(this.usernameInput, username);
@@ -67,7 +67,7 @@ export class AdminPage extends BasePage {
     await this.waitForPageLoad();
   }
 
-  // ─── Leitores ─────────────────────────────────────────────────────────────
+  // ─── Readers ──────────────────────────────────────────────────────────────
 
   async getPageTitle(): Promise<string> {
     return this.getText(this.pageTitle);
@@ -81,11 +81,23 @@ export class AdminPage extends BasePage {
     return this.userTable.hasNoRecords();
   }
 
-  // ─── Asserções ────────────────────────────────────────────────────────────
+  // ─── Assertions ───────────────────────────────────────────────────────────
 
   async expectPageLoaded(): Promise<void> {
-    await this.expectUrlContains('admin/view');
+    await this.expectUrlContains('admin/viewSystemUsers');
     await expect(this.addUserButton).toBeVisible();
+  }
+
+  async expectNavigatedToAddUserForm(): Promise<void> {
+    await this.expectUrlContains('admin/saveSystemUser');
+  }
+
+  async expectNoResults(): Promise<void> {
+    await this.userTable.expectNoRecords();
+  }
+
+  async expectHasResults(): Promise<void> {
+    await this.userTable.expectHasRecords();
   }
 
   async expectTableVisible(): Promise<void> {

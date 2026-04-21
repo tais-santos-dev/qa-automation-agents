@@ -4,7 +4,7 @@
  * Represents the data grid/table used throughout OrangeHRM (Employee List, etc.).
  * Provides strongly-typed methods for searching, reading rows, and triggering actions.
  */
-import { Page } from '@playwright/test';
+import { Page, expect } from '@playwright/test';
 import { BaseComponent } from '../utils/BaseComponent';
 import { TableAction } from '../constants/Messages';
 
@@ -61,6 +61,16 @@ export class TableComponent extends BaseComponent {
     ]);
     // Use count() for immediate snapshot of current DOM state
     return (await this.noRecordsText.count()) > 0;
+  }
+
+  // ─── Assertions ───────────────────────────────────────────────────────────
+
+  async expectNoRecords(): Promise<void> {
+    await expect(this.noRecordsText).toBeVisible();
+  }
+
+  async expectHasRecords(): Promise<void> {
+    await expect(this.noRecordsText).toBeHidden();
   }
 
   // ─── Actions ──────────────────────────────────────────────────────────────

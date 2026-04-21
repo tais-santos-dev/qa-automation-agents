@@ -1,108 +1,112 @@
 /**
  * search-employee.spec.ts
  *
- * Suite de testes de regressão para busca de funcionários no módulo PIM.
+ * Regression test suite for employee search in the PIM module.
  *
- * Estratégia:
- *  - Usa o projeto `chromium:authenticated` (storageState pré-carregado).
- *  - A fixture `pimPage` abre /pim/viewEmployeeList automaticamente.
- *  - Valida comportamentos de busca: resultados, filtros, estabilidade e edge cases.
+ * Strategy:
+ *  - Uses the `chromium:authenticated` project (pre-loaded storageState).
+ *  - The `pimPage` fixture opens /pim/viewEmployeeList automatically.
+ *  - Validates search behavior: results, filters, stability, and edge cases.
  *
- * Nota sobre autocomplete:
- *  O campo "Employee Name" é um autocomplete. Ao digitar valor inválido e clicar Search
- *  sem selecionar do dropdown, o OrangeHRM ignora o filtro e retorna todos os resultados.
- *  Os testes abaixo refletem esse comportamento real da aplicação.
+ * Note on autocomplete:
+ *  The "Employee Name" field is an autocomplete. Typing an invalid value and clicking Search
+ *  without selecting from the dropdown causes OrangeHRM to ignore the filter and return all results.
+ *  The tests below reflect this real application behavior.
  *
- * Cenários cobertos:
- *  ✅ [Positivo]   Busca sem filtros retorna ao menos 1 funcionário com contagem válida
- *  ✅ [Positivo]   Duas leituras consecutivas da tabela retornam mesma contagem
- *  ✅ [Positivo]   Busca com texto parcial retorna ≤ total
- *  ❌ [Negativo]   Aplicação permanece estável ao digitar texto inválido + Search
- *  ❌ [Negativo]   Buscar com caracteres especiais não causa crash ou XSS
- *  ⚠️  [Edge Case] String de 100 caracteres não quebra a aplicação
+ * Scenarios covered:
+ *  ✅ [Positive]   Search without filters returns at least 1 employee with valid count
+ *  ✅ [Positive]   Two consecutive table reads return the same count
+ *  ✅ [Positive]   Search with partial text returns ≤ total
+ *  ❌ [Negative]   Application remains stable when typing invalid text + Search
+ *  ❌ [Negative]   Searching with special characters does not cause crash or XSS
+ *  ⚠️  [Edge Case] 100-character string does not break the application
  */
 
 import { test, expect } from '../../../fixtures/test.fixture';
 
-// ─── Suite Principal ──────────────────────────────────────────────────────
+// ─── Test Constants ───────────────────────────────────────────────────────────
 
-test.describe('PIM — Busca de Funcionários (Regressão)', () => {
+const MAX_SEARCH_LENGTH = 100;
+
+// ─── Main Suite ───────────────────────────────────────────────────────────
+
+test.describe('PIM — Employee Search (Regression)', () => {
 
   test.beforeEach(async ({ pimPage }) => {
     await pimPage.expectOnPimListPage();
   });
 
-  // ─── Cenários Positivos ───────────────────────────────────────────────────
+  // ─── Positive Scenarios ───────────────────────────────────────────────────
 
-  test.describe('Positivo', () => {
+  test.describe('Positive', () => {
 
     test(
-      'deve exibir ao menos 1 funcionário na listagem com contagem válida',
+      'should display at least 1 employee in the listing with a valid count',
       { tag: ['@regression', '@pim'] },
       async ({ pimPage }) => {
-        // Assert — listagem padrão tem registros
+        // Assert — default listing has records
         const count = await pimPage.getEmployeeCount();
         expect(count).toBeGreaterThan(0);
       }
     );
 
     test(
-      'deve retornar a mesma contagem em duas leituras consecutivas sem busca',
+      'should return the same count in two consecutive reads without searching',
       { tag: ['@regression', '@pim'] },
       async ({ pimPage }) => {
-        // Act — duas leituras do estado atual da tabela
+        // Act — two reads of the current table state
         const firstCount = await pimPage.getEmployeeCount();
         const secondCount = await pimPage.getEmployeeCount();
 
-        // Assert — resultados idênticos (sem alteração de estado entre leituras)
+        // Assert — identical results (no state change between reads)
         expect(firstCount).toBe(secondCount);
       }
     );
 
     test(
-      'deve retornar subset menor ou igual ao total após digitar texto e buscar',
+      'should return a subset less than or equal to total after typing text and searching',
       { tag: ['@regression', '@pim'] },
       async ({ pimPage }) => {
-        // Arrange — total sem filtro
+        // Arrange — total without filter
         const totalCount = await pimPage.getEmployeeCount();
 
-        // Act — busca com qualquer texto (autocomplete pode ignorar valor inválido)
+        // Act — search with any text (autocomplete may ignore invalid value)
         await pimPage.searchEmployee('Admin');
         const filteredCount = await pimPage.getEmployeeCount();
 
-        // Assert — resultado filtrado nunca supera o total
+        // Assert — filtered result never exceeds total
         expect(filteredCount).toBeLessThanOrEqual(totalCount);
       }
     );
   });
 
-  // ─── Cenários Negativos ───────────────────────────────────────────────────
+  // ─── Negative Scenarios ───────────────────────────────────────────────────
 
-  test.describe('Negativo', () => {
+  test.describe('Negative', () => {
 
     test(
-      'deve manter a página estável ao digitar texto inválido no campo de busca',
+      'should keep the page stable when typing invalid text in the search field',
       { tag: ['@regression', '@pim'] },
-      async ({ page, pimPage }) => {
-        // Act — valor não selecionável no autocomplete
+      async ({ pimPage }) => {
+        // Act — value not selectable in autocomplete
         await pimPage.searchEmployee('zzz_nome_impossivel_xyz_00000');
 
-        // Assert — página estável (autocomplete ignora valor inválido → retorna resultados)
-        await expect(page).toHaveURL(/pim\/viewEmployeeList/);
+        // Assert — page stable (autocomplete ignores invalid value → returns results)
+        await pimPage.expectOnPimListPage();
         const count = await pimPage.getEmployeeCount();
         expect(count).toBeGreaterThanOrEqual(0);
       }
     );
 
     test(
-      'deve não causar crash ao buscar com caracteres especiais',
+      'should not crash when searching with special characters',
       { tag: ['@regression', '@pim'] },
-      async ({ page, pimPage }) => {
-        // Act — caracteres especiais (sem XSS, sem crash esperado)
+      async ({ pimPage }) => {
+        // Act — special characters (no XSS, no crash expected)
         await pimPage.searchEmployee('<script>alert(1)</script>');
 
-        // Assert — página continua estável e na URL correta
-        await expect(page).toHaveURL(/pim\/viewEmployeeList/);
+        // Assert — page remains stable on the correct URL
+        await pimPage.expectOnPimListPage();
         const count = await pimPage.getEmployeeCount();
         expect(count).toBeGreaterThanOrEqual(0);
       }
@@ -114,17 +118,17 @@ test.describe('PIM — Busca de Funcionários (Regressão)', () => {
   test.describe('Edge Cases', () => {
 
     test(
-      'deve não quebrar a aplicação ao buscar com string de 100 caracteres',
+      'should not break the application when searching with a 100-character string',
       { tag: ['@regression', '@pim'] },
-      async ({ page, pimPage }) => {
-        // Arrange — string longa (100 chars)
-        const longName = 'A'.repeat(100);
+      async ({ pimPage }) => {
+        // Arrange — long string (MAX_SEARCH_LENGTH chars)
+        const longName = 'A'.repeat(MAX_SEARCH_LENGTH);
 
         // Act
         await pimPage.searchEmployee(longName);
 
-        // Assert — aplicação estável
-        await expect(page).toHaveURL(/pim\/viewEmployeeList/);
+        // Assert — application stable
+        await pimPage.expectOnPimListPage();
         const count = await pimPage.getEmployeeCount();
         expect(count).toBeGreaterThanOrEqual(0);
       }

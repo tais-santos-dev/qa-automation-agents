@@ -1,43 +1,43 @@
 /**
  * admin-users.spec.ts
  *
- * Suite de testes smoke para o módulo Admin — Gestão de Usuários do OrangeHRM.
+ * Smoke test suite for the Admin module — User Management.
  *
- * Estratégia:
- *  - Usa o projeto `chromium:authenticated` (storageState pré-carregado).
- *  - A fixture `adminPage` abre /admin/viewSystemUsers automaticamente.
- *  - Testa carregamento da página, tabela de usuários e fluxos básicos.
+ * Strategy:
+ *  - Uses the `chromium:authenticated` project (pre-loaded storageState).
+ *  - The `adminPage` fixture opens /admin/viewSystemUsers automatically.
+ *  - Tests page load, user table, and basic flows.
  *
- * Cenários cobertos:
- *  ✅ [Positivo]   Página Admin carrega com tabela e botão "Add" visíveis
- *  ✅ [Positivo]   Tabela de usuários está visível com registros
- *  ✅ [Positivo]   Buscar usuário Admin retorna ao menos 1 resultado
- *  ✅ [Positivo]   Clicar em "Add" redireciona ao formulário de criação
- *  ✅ [Positivo]   Reset limpa a busca e restaura a listagem completa
- *  ❌ [Negativo]   Buscar usuário inexistente exibe "No Records Found"
- *  ⚠️  [Edge Case] Buscar com caracteres especiais não quebra a aplicação
+ * Scenarios covered:
+ *  ✅ [Positive]   Admin page loads with table and "Add" button visible
+ *  ✅ [Positive]   User table is visible with records
+ *  ✅ [Positive]   Searching for Admin user returns at least 1 result
+ *  ✅ [Positive]   Clicking "Add" redirects to the creation form
+ *  ✅ [Positive]   Reset clears the search and restores the full listing
+ *  ❌ [Negative]   Searching for a non-existent user shows "No Records Found"
+ *  ⚠️  [Edge Case] Searching with special characters does not crash the application
  */
 
 import { test, expect } from '../../../fixtures/test.fixture';
 
-// ─── Dados de teste ───────────────────────────────────────────────────────────
+// ─── Test Data ────────────────────────────────────────────────────────────────
 
 const ADMIN_USERNAME = process.env.ADMIN_USER ?? 'Admin';
 
-// ─── Suite Principal ──────────────────────────────────────────────────────
+// ─── Main Suite ───────────────────────────────────────────────────────────
 
-test.describe('Admin — Gestão de Usuários', () => {
+test.describe('Admin — User Management', () => {
 
   test.beforeEach(async ({ adminPage }) => {
     await adminPage.expectPageLoaded();
   });
 
-  // ─── Cenários Positivos ───────────────────────────────────────────────────
+  // ─── Positive Scenarios ───────────────────────────────────────────────────
 
-  test.describe('Positivo', () => {
+  test.describe('Positive', () => {
 
     test(
-      'deve exibir a tabela de usuários ao carregar a página Admin',
+      'should display the user table when loading the Admin page',
       { tag: ['@smoke', '@admin'] },
       async ({ adminPage }) => {
         await adminPage.expectTableVisible();
@@ -45,7 +45,7 @@ test.describe('Admin — Gestão de Usuários', () => {
     );
 
     test(
-      'deve exibir a tabela de usuários com ao menos 1 registro',
+      'should display the user table with at least 1 record',
       { tag: ['@smoke', '@admin'] },
       async ({ adminPage }) => {
         const count = await adminPage.getUserCount();
@@ -54,15 +54,14 @@ test.describe('Admin — Gestão de Usuários', () => {
     );
 
     test(
-      'deve encontrar ao menos 1 resultado ao buscar pelo usuário Admin',
+      'should find at least 1 result when searching for the Admin user',
       { tag: ['@smoke', '@admin'] },
       async ({ adminPage }) => {
         // Act
         await adminPage.searchByUsername(ADMIN_USERNAME);
 
-        // Assert — Admin sempre existe na demo
-        const hasNoResults = await adminPage.hasNoResults();
-        expect(hasNoResults).toBe(false);
+        // Assert — Admin always exists in the demo
+        await adminPage.expectHasResults();
 
         const count = await adminPage.getUserCount();
         expect(count).toBeGreaterThanOrEqual(1);
@@ -70,49 +69,48 @@ test.describe('Admin — Gestão de Usuários', () => {
     );
 
     test(
-      'deve redirecionar ao formulário de criação ao clicar em "Add"',
+      'should redirect to the creation form when clicking "Add"',
       { tag: ['@smoke', '@admin'] },
-      async ({ page, adminPage }) => {
+      async ({ adminPage }) => {
         // Act
         await adminPage.clickAddUser();
 
-        // Assert — deve ir para a tela de adição de usuário
-        await expect(page).toHaveURL(/admin\/saveSystemUser/);
+        // Assert — should navigate to the add user screen
+        await adminPage.expectNavigatedToAddUserForm();
       }
     );
 
     test(
-      'deve restaurar a listagem completa após clicar em Reset',
+      'should restore the full listing after clicking Reset',
       { tag: ['@smoke', '@admin'] },
       async ({ adminPage }) => {
-        // Arrange — aplica filtro antes
+        // Arrange — apply filter first
         await adminPage.searchByUsername(ADMIN_USERNAME);
         const filteredCount = await adminPage.getUserCount();
 
-        // Act — limpa o filtro
+        // Act — clear the filter
         await adminPage.reset();
 
-        // Assert — deve ter igual ou mais resultados que filtrado
+        // Assert — should have equal or more results than filtered
         const totalCount = await adminPage.getUserCount();
         expect(totalCount).toBeGreaterThanOrEqual(filteredCount);
       }
     );
   });
 
-  // ─── Cenários Negativos ───────────────────────────────────────────────────
+  // ─── Negative Scenarios ───────────────────────────────────────────────────
 
-  test.describe('Negativo', () => {
+  test.describe('Negative', () => {
 
     test(
-      'deve exibir "No Records Found" ao buscar por usuário inexistente',
+      'should show "No Records Found" when searching for a non-existent user',
       { tag: ['@regression', '@admin'] },
       async ({ adminPage }) => {
         // Act
         await adminPage.searchByUsername('usr_zzz_99999_inexistente');
 
         // Assert
-        const hasNoResults = await adminPage.hasNoResults();
-        expect(hasNoResults).toBe(true);
+        await adminPage.expectNoResults();
       }
     );
   });
@@ -122,14 +120,13 @@ test.describe('Admin — Gestão de Usuários', () => {
   test.describe('Edge Cases', () => {
 
     test(
-      'não deve quebrar a aplicação ao buscar com caracteres especiais no Username',
+      'should not crash the application when searching with special characters in Username',
       { tag: ['@regression', '@admin'] },
-      async ({ page, adminPage }) => {
-        // Act — caracteres especiais não devem causar crash
+      async ({ adminPage }) => {
+        // Act — special characters should not cause a crash
         await adminPage.searchByUsername('<script>alert(1)</script>');
 
-        // Assert — página continua estável na URL correta
-        await expect(page).toHaveURL(/admin\/viewSystemUsers/);
+        // Assert — page remains stable on the correct URL
         await adminPage.expectPageLoaded();
       }
     );
