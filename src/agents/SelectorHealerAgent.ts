@@ -1,13 +1,13 @@
 /**
  * SelectorHealerAgent.ts
  *
- * Agente AI que detecta testes com falha por seletor quebrado, navega na página
- * usando Playwright para inspecionar o DOM atual e usa Claude para sugerir o
- * seletor correto — com opção de aplicar o fix automaticamente no Page Object.
+ * AI agent that detects failing tests due to broken selectors, navigates to the page
+ * using Playwright to inspect the current DOM, and uses Claude to suggest the correct
+ * selector — with an option to automatically apply the fix to the Page Object.
  *
- * Uso:
+ * Usage:
  *   npm run heal
- *   npm run heal -- --auto-fix        # aplica a correção automaticamente
+ *   npm run heal -- --auto-fix        # applies the fix automatically
  *   npm run heal -- --file=results.json
  */
 
@@ -20,7 +20,7 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-// ─── Tipos ─────────────────────────────────────────────────────────────────
+// ─── Types ─────────────────────────────────────────────────────────────────
 
 interface PlaywrightError { message: string; stack?: string; }
 interface PlaywrightTestResult { status: string; errors: PlaywrightError[]; }
@@ -84,7 +84,7 @@ function collectBrokenTests(suites: PlaywrightSuite[], file = ''): BrokenSelecto
   return broken;
 }
 
-// ─── Inspeção DOM ──────────────────────────────────────────────────────────
+// ─── DOM inspection ────────────────────────────────────────────────────────
 
 async function inspectPageDOM(route: string): Promise<string> {
   const authPath = 'auth/admin-storage-state.json';
@@ -115,50 +115,50 @@ async function inspectPageDOM(route: string): Promise<string> {
     return JSON.stringify(domSnapshot, null, 2);
   } catch {
     await browser.close();
-    return '(não foi possível inspecionar a página)';
+    return '(could not inspect the page)';
   }
 }
 
-// ─── Análise com Claude ────────────────────────────────────────────────────
+// ─── Claude analysis ───────────────────────────────────────────────────────
 
 async function healSelector(client: Anthropic, broken: BrokenSelector, pageObjectContent: string, domSnapshot: string): Promise<void> {
 
-  const systemPrompt = `Você é um especialista em Playwright que conserta seletores quebrados em Page Objects TypeScript.
+  const systemPrompt = `You are a Playwright specialist who fixes broken selectors in TypeScript Page Objects.
 
-Dado um seletor que parou de funcionar e o DOM atual da página, sugira:
-1. O seletor correto (priorize: [name], [type], [data-testid], aria-label, texto visível)
-2. A linha exata do Page Object para substituir
-3. Explicação do porquê o seletor anterior quebrou
+Given a selector that stopped working and the current DOM of the page, suggest:
+1. The correct selector (prioritize: [name], [type], [data-testid], aria-label, visible text)
+2. The exact Page Object line to replace
+3. Explanation of why the previous selector broke
 
-Formato obrigatório:
-## Seletor quebrado
-\`seletor antigo\`
+Required format:
+## Broken selector
+\`old selector\`
 
-## Seletor sugerido
-\`seletor novo\`
+## Suggested selector
+\`new selector\`
 
-## Substituição no Page Object
-**Antes:** \`código antigo\`
-**Depois:** \`código novo\`
+## Page Object replacement
+**Before:** \`old code\`
+**After:** \`new code\`
 
-## Por que quebrou
-[explicação objetiva]
+## Why it broke
+[objective explanation]
 
-## Confiança: [Alta / Média / Baixa]`;
+## Confidence: [High / Medium / Low]`;
 
-  const userMessage = `Teste com falha: "${broken.testTitle}"
+  const userMessage = `Failing test: "${broken.testTitle}"
 
-**Erro:**
+**Error:**
 ${broken.errorMessage.slice(0, 400)}
 
-**Seletor identificado como quebrado:** ${broken.brokenSelector ?? '(não extraído)'}
+**Identified broken selector:** ${broken.brokenSelector ?? '(not extracted)'}
 
-**Page Object atual:**
+**Current Page Object:**
 \`\`\`typescript
 ${pageObjectContent.slice(0, 2000)}
 \`\`\`
 
-**DOM atual da página (elementos interativos):**
+**Current DOM (interactive elements):**
 \`\`\`json
 ${domSnapshot.slice(0, 2000)}
 \`\`\``;
@@ -187,7 +187,7 @@ async function main() {
   const filePath = path.resolve(file);
 
   if (!fs.existsSync(filePath)) {
-    console.error(`❌  Relatório não encontrado: ${filePath}\n   Execute: npm test`);
+    console.error(`❌  Report not found: ${filePath}\n   Run: npm test`);
     process.exit(1);
   }
 
@@ -197,12 +197,12 @@ async function main() {
   console.log('\n🔧  SelectorHealerAgent');
 
   if (broken.length === 0) {
-    console.log('✅  Nenhuma falha por seletor quebrado encontrada.\n');
+    console.log('✅  No broken selector failures found.\n');
     return;
   }
 
-  console.log(`⚠️  ${broken.length} seletor(es) quebrado(s) encontrado(s).\n`);
-  if (autoFix) console.log('   Modo --auto-fix: revise as sugestões antes de commitar.\n');
+  console.log(`⚠️  ${broken.length} broken selector(s) found.\n`);
+  if (autoFix) console.log('   --auto-fix mode: review the suggestions before committing.\n');
 
   for (let i = 0; i < broken.length; i++) {
     const item = broken[i];
@@ -210,8 +210,8 @@ async function main() {
     console.log(`[${i + 1}/${broken.length}] ${item.testTitle}`);
     console.log(`📁  ${item.specFile}\n`);
 
-    // Correlaciona o Page Object pelo nome do arquivo de spec:
-    // spec "pim/add-employee.spec.ts" → procura "AddEmployeePage.ts", "EmployeePage.ts", etc.
+    // Correlates the Page Object by the spec filename:
+    // spec "pim/add-employee.spec.ts" → looks for "AddEmployeePage.ts", "EmployeePage.ts", etc.
     const pagesDir = path.resolve('src/pages');
     const pageFiles = fs.existsSync(pagesDir) ? fs.readdirSync(pagesDir).filter(f => f.endsWith('.ts')) : [];
     const specBaseName = path.basename(item.specFile, '.spec.ts').replace(/-/g, '').toLowerCase();
@@ -220,21 +220,21 @@ async function main() {
       ?? pageFiles[0];
     const pageObjectContent = matchedPage
       ? fs.readFileSync(path.join(pagesDir, matchedPage), 'utf-8')
-      : '(Page Object não encontrado)';
+      : '(Page Object not found)';
 
     const routeMatch = item.errorMessage.match(/\/web\/index\.php\/[^\s"')]+/);
     const route = routeMatch ? routeMatch[0] : '/web/index.php/dashboard/index';
 
-    console.log(`🌐  Inspecionando DOM...`);
+    console.log(`🌐  Inspecting DOM...`);
     const domSnapshot = await inspectPageDOM(route);
 
-    console.log('🤖  Analisando com Claude...\n');
+    console.log('🤖  Analyzing with Claude...\n');
     await healSelector(client, item, pageObjectContent, domSnapshot);
   }
 
   console.log('═'.repeat(60));
-  console.log(`✅  ${broken.length} seletor(es) analisado(s).`);
+  console.log(`✅  ${broken.length} selector(s) analyzed.`);
   console.log('═'.repeat(60) + '\n');
 }
 
-main().catch(err => { console.error('\n❌  Erro:', err.message); process.exit(1); });
+main().catch(err => { console.error('\n❌  Error:', err.message); process.exit(1); });

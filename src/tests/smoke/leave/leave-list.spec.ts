@@ -1,40 +1,40 @@
 /**
  * leave-list.spec.ts
  *
- * Suite de testes smoke para o módulo Leave — Lista de Solicitações.
+ * Smoke test suite for the Leave module — Request List.
  *
- * Estratégia:
- *  - Usa o projeto `chromium:authenticated` (storageState pré-carregado).
- *  - A fixture `leaveListPage` abre /leave/viewLeaveList automaticamente.
- *  - Testa carregamento da página, tabela e ações básicas de busca.
+ * Strategy:
+ *  - Uses the `chromium:authenticated` project (pre-loaded storageState).
+ *  - The `leaveListPage` fixture opens /leave/viewLeaveList automatically.
+ *  - Tests page load, table, and basic search actions.
  *
- * Cenários cobertos:
- *  ✅ [Positivo]   Página carrega com URL correta e botão de busca visível
- *  ✅ [Positivo]   Título da página é "Leave List"
- *  ✅ [Positivo]   Tabela de licenças está visível após carregamento
- *  ✅ [Positivo]   Clicar em Search sem filtros retorna registros
- *  ✅ [Positivo]   Botão Reset limpa os filtros sem erros
- *  ❌ [Negativo]   Múltiplos resets consecutivos não quebram a página
- *  ⚠️  [Edge Case] Ciclo search → reset → search mantém tabela visível
+ * Scenarios covered:
+ *  ✅ [Positive]   Page loads with correct URL and search button visible
+ *  ✅ [Positive]   Page title is "Leave List"
+ *  ✅ [Positive]   Leave table is visible after load
+ *  ✅ [Positive]   Clicking Search without filters returns records
+ *  ✅ [Positive]   Reset button clears filters without errors
+ *  ❌ [Negative]   Multiple consecutive resets do not break the page
+ *  ⚠️  [Edge Case] Search → reset → search cycle keeps the table visible
  */
 
 import { test, expect } from '../../../fixtures/test.fixture';
 import { PageTitle } from '../../../constants/Messages';
 
-// ─── Suite Principal ──────────────────────────────────────────────────────
+// ─── Main Suite ───────────────────────────────────────────────────────────
 
-test.describe('Leave — Lista de Solicitações', () => {
+test.describe('Leave — Request List', () => {
 
   test.beforeEach(async ({ leaveListPage }) => {
     await leaveListPage.expectPageLoaded();
   });
 
-  // ─── Cenários Positivos ───────────────────────────────────────────────────
+  // ─── Positive Scenarios ───────────────────────────────────────────────────
 
-  test.describe('Positivo', () => {
+  test.describe('Positive', () => {
 
     test(
-      'deve carregar a página Leave List com URL e título corretos',
+      'should load the Leave List page with correct URL and title',
       { tag: ['@smoke', '@leave'] },
       async ({ leaveListPage }) => {
         const title = await leaveListPage.getPageTitle();
@@ -43,7 +43,7 @@ test.describe('Leave — Lista de Solicitações', () => {
     );
 
     test(
-      'deve exibir a tabela de licenças após carregamento da página',
+      'should display the leave table after page load',
       { tag: ['@smoke', '@leave'] },
       async ({ leaveListPage }) => {
         await leaveListPage.expectTableVisible();
@@ -51,44 +51,44 @@ test.describe('Leave — Lista de Solicitações', () => {
     );
 
     test(
-      'deve retornar registros ao clicar em Search sem filtros aplicados',
+      'should return records when clicking Search with no filters applied',
       { tag: ['@smoke', '@leave'] },
       async ({ leaveListPage }) => {
-        // Act — busca padrão sem filtros
+        // Act — default search with no filters
         await leaveListPage.search();
 
-        // Assert — tabela deve permanecer visível
+        // Assert — table should remain visible
         await leaveListPage.expectTableVisible();
       }
     );
 
     test(
-      'deve limpar filtros sem erros ao clicar no botão Reset',
+      'should clear filters without errors when clicking Reset',
       { tag: ['@smoke', '@leave'] },
       async ({ leaveListPage }) => {
-        // Act — reset sem filtros aplicados
+        // Act — reset with no filters applied
         await leaveListPage.reset();
 
-        // Assert — página permanece carregada
+        // Assert — page remains loaded
         await leaveListPage.expectPageLoaded();
       }
     );
   });
 
-  // ─── Cenários Negativos ───────────────────────────────────────────────────
+  // ─── Negative Scenarios ───────────────────────────────────────────────────
 
-  test.describe('Negativo', () => {
+  test.describe('Negative', () => {
 
     test(
-      'não deve quebrar a aplicação após múltiplos resets consecutivos',
+      'should not crash the application after multiple consecutive resets',
       { tag: ['@regression', '@leave'] },
       async ({ leaveListPage }) => {
-        // Act — três resets consecutivos
+        // Act — three consecutive resets
         await leaveListPage.reset();
         await leaveListPage.reset();
         await leaveListPage.reset();
 
-        // Assert — página permanece estável e carregada
+        // Assert — page remains stable and loaded
         await leaveListPage.expectPageLoaded();
         await leaveListPage.expectTableVisible();
       }
@@ -100,14 +100,14 @@ test.describe('Leave — Lista de Solicitações', () => {
   test.describe('Edge Cases', () => {
 
     test(
-      'deve manter a tabela visível após ciclo de search e reset',
+      'should keep the table visible after a search and reset cycle',
       { tag: ['@regression', '@leave'] },
       async ({ leaveListPage }) => {
-        // Act — busca e depois reset
+        // Act — search and then reset
         await leaveListPage.search();
         await leaveListPage.reset();
 
-        // Assert — tabela continua visível
+        // Assert — table remains visible
         await leaveListPage.expectTableVisible();
       }
     );

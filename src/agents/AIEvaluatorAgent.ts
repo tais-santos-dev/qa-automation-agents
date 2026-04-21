@@ -1,24 +1,24 @@
 /**
  * AIEvaluatorAgent.ts
  *
- * Agente que avalia a qualidade dos outputs de outros agentes usando
- * LLM-as-Judge com rubricas explícitas por critério.
+ * Agent that evaluates the output quality of other agents using
+ * LLM-as-Judge with explicit per-criterion rubrics.
  *
- * Cada agente tem uma rubrica calibrada com scores 0-10.
- * O "juiz" é claude-opus-4-6 avaliando outputs dos demais agentes.
- * Outputs com score < 7 são sinalizados para revisão humana.
+ * Each agent has a calibrated rubric with scores 0-10.
+ * The "judge" is claude-opus-4-6 evaluating outputs from the other agents.
+ * Outputs with score < 7 are flagged for human review.
  *
- * Uso:
+ * Usage:
  *   npm run eval -- --agent=failure-analyzer --input=reports/last-analysis.md
  *   npm run eval -- --agent=test-reviewer --input=src/tests/smoke/auth/login.spec.ts
- *   npm run eval:all   # avalia todos os agentes com seus golden datasets
+ *   npm run eval:all   # evaluates all agents with their golden datasets
  *
  * Flags:
- *   --agent   Nome do agente a avaliar (obrigatório)
- *   --input   Arquivo com o output do agente a ser avaliado
- *   --save    Salva resultado em reports/eval-[agent]-[timestamp].json
+ *   --agent   Name of the agent to evaluate (required)
+ *   --input   File with the agent output to evaluate
+ *   --save    Saves result to reports/eval-[agent]-[timestamp].json
  *
- * Agentes suportados:
+ * Supported agents:
  *   failure-analyzer | flaky-detector | test-reviewer |
  *   coverage-advisor | selector-healer | test-generator
  */
@@ -30,287 +30,287 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-// ─── Tipos ─────────────────────────────────────────────────────────────────
+// ─── Types ─────────────────────────────────────────────────────────────────
 
-interface Criterio {
-  nome: string;
-  descricao: string;
-  peso: number; // 1-3 (importância relativa)
-  rubrica: Record<number, string>; // score → descrição
+interface Criterion {
+  name: string;
+  description: string;
+  weight: number; // 1-3 (relative importance)
+  rubric: Record<number, string>; // score → description
 }
 
-interface Rubrica {
-  agente: string;
-  descricao: string;
-  criterios: Criterio[];
-  aprovadoSe: number; // score mínimo ponderado (0-10)
+interface Rubric {
+  agent: string;
+  description: string;
+  criteria: Criterion[];
+  passIf: number; // minimum weighted score (0-10)
 }
 
-interface ResultadoCriterio {
-  nome: string;
+interface CriterionResult {
+  name: string;
   score: number;
-  peso: number;
-  justificativa: string;
+  weight: number;
+  justification: string;
 }
 
-interface ResultadoAvaliacao {
-  agente: string;
+interface EvaluationResult {
+  agent: string;
   timestamp: string;
-  scoreFinal: number;
-  aprovado: boolean;
-  criterios: ResultadoCriterio[];
-  resumo: string;
-  recomendacoes: string[];
+  finalScore: number;
+  passed: boolean;
+  criteria: CriterionResult[];
+  summary: string;
+  recommendations: string[];
 }
 
-// ─── Rubricas por Agente ───────────────────────────────────────────────────
+// ─── Rubrics per Agent ─────────────────────────────────────────────────────
 
-const RUBRICAS: Record<string, Rubrica> = {
+const RUBRICS: Record<string, Rubric> = {
   'failure-analyzer': {
-    agente: 'FailureAnalyzerAgent',
-    descricao: 'Avalia se o diagnóstico de falha é preciso, acionável e correto',
-    aprovadoSe: 7,
-    criterios: [
+    agent: 'FailureAnalyzerAgent',
+    description: 'Evaluates whether the failure diagnosis is accurate, actionable, and correct',
+    passIf: 7,
+    criteria: [
       {
-        nome: 'Classificação do tipo de falha',
-        descricao: 'Identificou corretamente o tipo (locator/timeout/assertion/auth/race condition)',
-        peso: 2,
-        rubrica: {
-          0: 'Não classificou ou classificou completamente errado',
-          1: 'Classificou vagamente sem especificar o tipo',
-          2: 'Classificou corretamente com evidência do texto de erro',
+        name: 'Failure type classification',
+        description: 'Correctly identified the type (locator/timeout/assertion/auth/race condition)',
+        weight: 2,
+        rubric: {
+          0: 'Did not classify or classified completely wrong',
+          1: 'Classified vaguely without specifying the type',
+          2: 'Correctly classified with evidence from the error text',
         },
       },
       {
-        nome: 'Referência ao arquivo e linha',
-        descricao: 'Citou o arquivo correto e idealmente a linha do problema',
-        peso: 2,
-        rubrica: {
-          0: 'Não mencionou nenhum arquivo',
-          1: 'Mencionou arquivo mas sem linha ou com linha incorreta',
-          2: 'Citou arquivo e linha corretamente',
+        name: 'File and line reference',
+        description: 'Cited the correct file and ideally the line of the issue',
+        weight: 2,
+        rubric: {
+          0: 'Did not mention any file',
+          1: 'Mentioned file but without line or with incorrect line',
+          2: 'Correctly cited file and line',
         },
       },
       {
-        nome: 'Correção sugerida é aplicável',
-        descricao: 'Código antes/depois pronto para aplicar, sem invenções',
-        peso: 3,
-        rubrica: {
-          0: 'Sem correção ou correção incorreta/inaplicável',
-          1: 'Direção correta mas código incompleto ou genérico demais',
-          2: 'Correção parcialmente aplicável com ajustes',
-          3: 'Código antes/depois preciso, pronto para aplicar',
+        name: 'Suggested fix is applicable',
+        description: 'Before/after code ready to apply, without hallucinations',
+        weight: 3,
+        rubric: {
+          0: 'No fix or incorrect/inapplicable fix',
+          1: 'Correct direction but incomplete or too generic code',
+          2: 'Partially applicable fix with adjustments',
+          3: 'Precise before/after code, ready to apply',
         },
       },
       {
-        nome: 'Ausência de alucinação',
-        descricao: 'Todos métodos, arquivos e classes citados existem no projeto',
-        peso: 3,
-        rubrica: {
-          0: 'Inventou métodos, arquivos ou classes que não existem',
-          1: 'Citou elementos não verificáveis (pode existir, pode não existir)',
-          2: 'Elementos citados são plausíveis para o projeto',
-          3: 'Todos os elementos citados existem e são corretos',
+        name: 'Absence of hallucination',
+        description: 'All cited methods, files, and classes exist in the project',
+        weight: 3,
+        rubric: {
+          0: 'Invented methods, files, or classes that do not exist',
+          1: 'Cited unverifiable elements (may or may not exist)',
+          2: 'Cited elements are plausible for the project',
+          3: 'All cited elements exist and are correct',
         },
       },
     ],
   },
 
   'test-reviewer': {
-    agente: 'test-reviewer',
-    descricao: 'Avalia se o review de spec identifica problemas reais sem falsos positivos',
-    aprovadoSe: 7,
-    criterios: [
+    agent: 'test-reviewer',
+    description: 'Evaluates whether the spec review identifies real issues without false positives',
+    passIf: 7,
+    criteria: [
       {
-        nome: 'Cobertura do checklist',
-        descricao: 'Verificou estrutura, imports, tags, assertions e anti-patterns',
-        peso: 2,
-        rubrica: {
-          0: 'Verificou menos de 2 dimensões do checklist',
-          1: 'Verificou 3-4 dimensões com superficialidade',
-          2: 'Verificou todas as dimensões com exemplos concretos',
+        name: 'Checklist coverage',
+        description: 'Verified structure, imports, tags, assertions, and anti-patterns',
+        weight: 2,
+        rubric: {
+          0: 'Checked fewer than 2 checklist dimensions',
+          1: 'Checked 3-4 dimensions superficially',
+          2: 'Checked all dimensions with concrete examples',
         },
       },
       {
-        nome: 'Precisão dos problemas apontados',
-        descricao: 'Problemas identificados são reais, não falsos positivos',
-        peso: 3,
-        rubrica: {
-          0: 'Maioria dos problemas são falsos positivos ou inválidos',
-          1: 'Mistura de problemas reais e falsos positivos',
-          2: 'Maioria dos problemas são válidos',
-          3: 'Todos os problemas são válidos e relevantes',
+        name: 'Accuracy of identified issues',
+        description: 'Identified issues are real, not false positives',
+        weight: 3,
+        rubric: {
+          0: 'Most issues are false positives or invalid',
+          1: 'Mix of real issues and false positives',
+          2: 'Most issues are valid',
+          3: 'All issues are valid and relevant',
         },
       },
       {
-        nome: 'Veredito justificado',
-        descricao: 'Veredito final (APROVADO/BLOQUEADO) está alinhado com os problemas',
-        peso: 2,
-        rubrica: {
-          0: 'Veredito contraditório com os problemas encontrados',
-          1: 'Veredito correto mas sem justificativa clara',
-          2: 'Veredito correto e bem justificado',
+        name: 'Justified verdict',
+        description: 'Final verdict (APPROVED/BLOCKED) aligns with the issues found',
+        weight: 2,
+        rubric: {
+          0: 'Verdict contradicts the found issues',
+          1: 'Correct verdict but without clear justification',
+          2: 'Correct and well-justified verdict',
         },
       },
       {
-        nome: 'Acionabilidade',
-        descricao: 'O desenvolvedor sabe exatamente o que corrigir',
-        peso: 3,
-        rubrica: {
-          0: 'Feedback vago, não sabe o que fazer',
-          1: 'Feedback com direção mas sem código ou exemplo',
-          2: 'Feedback com exemplo parcial',
-          3: 'Feedback com código exato para corrigir',
+        name: 'Actionability',
+        description: 'The developer knows exactly what to fix',
+        weight: 3,
+        rubric: {
+          0: 'Vague feedback, unclear what to do',
+          1: 'Feedback with direction but no code or example',
+          2: 'Feedback with partial example',
+          3: 'Feedback with exact code to fix',
         },
       },
     ],
   },
 
   'coverage-advisor': {
-    agente: 'coverage-advisor',
-    descricao: 'Avalia se a análise de cobertura é precisa e as prioridades fazem sentido',
-    aprovadoSe: 6,
-    criterios: [
+    agent: 'coverage-advisor',
+    description: 'Evaluates whether the coverage analysis is accurate and priorities make sense',
+    passIf: 6,
+    criteria: [
       {
-        nome: 'Mapeamento correto de módulos',
-        descricao: 'Identificou corretamente os módulos cobertos e descobertos',
-        peso: 3,
-        rubrica: {
-          0: 'Mapeamento incorreto ou incompleto',
-          1: 'Mapeamento parcial com gaps evidentes',
-          2: 'Mapeamento correto dos principais módulos',
-          3: 'Mapeamento completo e preciso com evidências',
+        name: 'Correct module mapping',
+        description: 'Correctly identified covered and uncovered modules',
+        weight: 3,
+        rubric: {
+          0: 'Incorrect or incomplete mapping',
+          1: 'Partial mapping with evident gaps',
+          2: 'Correct mapping of main modules',
+          3: 'Complete and accurate mapping with evidence',
         },
       },
       {
-        nome: 'Priorização por risco de negócio',
-        descricao: 'Priorizou módulos por impacto real no negócio, não por facilidade',
-        peso: 3,
-        rubrica: {
-          0: 'Priorização aleatória ou por facilidade técnica',
-          1: 'Priorização com alguma lógica de negócio',
-          2: 'Priorização clara por risco com justificativa',
-          3: 'Priorização detalhada com critérios explícitos de risco',
+        name: 'Business risk prioritization',
+        description: 'Prioritized modules by real business impact, not by ease',
+        weight: 3,
+        rubric: {
+          0: 'Random or technical-ease prioritization',
+          1: 'Prioritization with some business logic',
+          2: 'Clear risk-based prioritization with justification',
+          3: 'Detailed prioritization with explicit risk criteria',
         },
       },
       {
-        nome: 'Recomendações específicas',
-        descricao: 'Próximos passos são específicos, não genéricos',
-        peso: 2,
-        rubrica: {
-          0: '"Adicione mais testes" — genérico demais',
-          1: 'Especifica módulos mas não fluxos',
-          2: 'Especifica módulos e fluxos prioritários',
+        name: 'Specific recommendations',
+        description: 'Next steps are specific, not generic',
+        weight: 2,
+        rubric: {
+          0: '"Add more tests" — too generic',
+          1: 'Specifies modules but not flows',
+          2: 'Specifies modules and priority flows',
         },
       },
       {
-        nome: 'Ausência de invenção de cobertura',
-        descricao: 'Não afirmou que testes existem quando não existem',
-        peso: 2,
-        rubrica: {
-          0: 'Afirmou cobertura inexistente',
-          1: 'Incerto sobre cobertura de alguns módulos',
-          2: 'Preciso sobre o que existe e o que não existe',
+        name: 'No coverage invention',
+        description: 'Did not claim tests exist when they do not',
+        weight: 2,
+        rubric: {
+          0: 'Claimed non-existent coverage',
+          1: 'Uncertain about some module coverage',
+          2: 'Accurate about what exists and what does not',
         },
       },
     ],
   },
 
   'selector-healer': {
-    agente: 'SelectorHealerAgent',
-    descricao: 'Avalia se os seletores sugeridos são estáveis e corretos',
-    aprovadoSe: 7,
-    criterios: [
+    agent: 'SelectorHealerAgent',
+    description: 'Evaluates whether the suggested selectors are stable and correct',
+    passIf: 7,
+    criteria: [
       {
-        nome: 'Estabilidade do seletor sugerido',
-        descricao: 'Prioriza [name], [data-testid], aria sobre classes CSS geradas',
-        peso: 3,
-        rubrica: {
-          0: 'Sugeriu seletor baseado em posição ou classe gerada frágil',
-          1: 'Seletor funcional mas não o mais estável possível',
-          2: 'Seletor estável com prioridade correta',
-          3: 'Seletor ótimo com justificativa de estabilidade',
+        name: 'Stability of suggested selector',
+        description: 'Prioritizes [name], [data-testid], aria over generated CSS classes',
+        weight: 3,
+        rubric: {
+          0: 'Suggested position-based or fragile generated-class selector',
+          1: 'Functional selector but not the most stable possible',
+          2: 'Stable selector with correct priority',
+          3: 'Optimal selector with stability justification',
         },
       },
       {
-        nome: 'Explicação do motivo da quebra',
-        descricao: 'Explicou por que o seletor anterior parou de funcionar',
-        peso: 2,
-        rubrica: {
-          0: 'Sem explicação',
-          1: 'Explicação vaga',
-          2: 'Explicação precisa e educativa',
+        name: 'Explanation of why it broke',
+        description: 'Explained why the previous selector stopped working',
+        weight: 2,
+        rubric: {
+          0: 'No explanation',
+          1: 'Vague explanation',
+          2: 'Precise and educational explanation',
         },
       },
       {
-        nome: 'Código de substituição pronto',
-        descricao: 'Forneceu before/after pronto para aplicar no Page Object',
-        peso: 3,
-        rubrica: {
-          0: 'Sem código de substituição',
-          1: 'Código incompleto ou com erro de sintaxe',
-          2: 'Código correto mas precisa de adaptação',
-          3: 'Código exato, pronto para copiar e colar',
+        name: 'Ready replacement code',
+        description: 'Provided before/after code ready to apply in the Page Object',
+        weight: 3,
+        rubric: {
+          0: 'No replacement code',
+          1: 'Incomplete or syntactically incorrect code',
+          2: 'Correct code but requires adaptation',
+          3: 'Exact code, ready to copy and paste',
         },
       },
       {
-        nome: 'Nível de confiança calibrado',
-        descricao: 'A confiança declarada (Alta/Média/Baixa) reflete evidências reais',
-        peso: 2,
-        rubrica: {
-          0: 'Confiança Alta sem evidência suficiente',
-          1: 'Confiança razoável mas poderia ser mais precisa',
-          2: 'Confiança bem calibrada com o DOM disponível',
+        name: 'Calibrated confidence level',
+        description: 'The declared confidence (High/Medium/Low) reflects real evidence',
+        weight: 2,
+        rubric: {
+          0: 'High confidence without sufficient evidence',
+          1: 'Reasonable confidence but could be more precise',
+          2: 'Well-calibrated confidence with available DOM',
         },
       },
     ],
   },
 
   'test-generator': {
-    agente: 'TestGeneratorAgent',
-    descricao: 'Avalia se o Page Object e spec gerados seguem os padrões do projeto',
-    aprovadoSe: 7,
-    criterios: [
+    agent: 'TestGeneratorAgent',
+    description: 'Evaluates whether the generated Page Object and spec follow project standards',
+    passIf: 7,
+    criteria: [
       {
-        nome: 'Padrões de Page Object',
-        descricao: 'Extende BasePage, locators private/protected, métodos com verbos',
-        peso: 3,
-        rubrica: {
-          0: 'Não segue nenhum padrão do projeto',
-          1: 'Segue alguns padrões com violações importantes',
-          2: 'Segue a maioria dos padrões',
-          3: 'Segue todos os padrões com seletores semânticos',
+        name: 'Page Object standards',
+        description: 'Extends BasePage, private/protected locators, verb-named methods',
+        weight: 3,
+        rubric: {
+          0: 'Follows no project standards',
+          1: 'Follows some standards with important violations',
+          2: 'Follows most standards',
+          3: 'Follows all standards with semantic selectors',
         },
       },
       {
-        nome: 'Qualidade dos cenários de teste',
-        descricao: 'Cobre positivo, negativo e edge cases com assertions reais',
-        peso: 3,
-        rubrica: {
-          0: 'Apenas caminho feliz ou sem assertions reais',
-          1: 'Positivo e alguns negativos superficiais',
-          2: 'Cobertura boa com assertions verificáveis',
-          3: 'Cobertura completa com arrange/act/assert explícitos',
+        name: 'Test scenario quality',
+        description: 'Covers positive, negative, and edge cases with real assertions',
+        weight: 3,
+        rubric: {
+          0: 'Only happy path or no real assertions',
+          1: 'Positive and some superficial negatives',
+          2: 'Good coverage with verifiable assertions',
+          3: 'Complete coverage with explicit arrange/act/assert',
         },
       },
       {
-        nome: 'Zero magic strings',
-        descricao: 'Usa enums de constants/ em vez de strings hardcoded',
-        peso: 2,
-        rubrica: {
-          0: 'Cheio de strings hardcoded',
-          1: 'Algumas strings hardcoded, maioria em enum',
-          2: 'Todos os valores em enums ou variáveis nomeadas',
+        name: 'Zero magic strings',
+        description: 'Uses constants/ enums instead of hardcoded strings',
+        weight: 2,
+        rubric: {
+          0: 'Full of hardcoded strings',
+          1: 'Some hardcoded strings, most in enums',
+          2: 'All values in enums or named variables',
         },
       },
       {
-        nome: 'Nomes em português e formato correto',
-        descricao: 'deve [verbo] [resultado], tags corretas, estrutura describe',
-        peso: 2,
-        rubrica: {
-          0: 'Nomes em inglês ou sem formato padrão',
-          1: 'Maioria em português mas inconsistente',
-          2: 'Todos no formato correto com tags e estrutura',
+        name: 'Correct test name format',
+        description: 'should [verb] [outcome], correct tags, describe structure',
+        weight: 2,
+        rubric: {
+          0: 'Names not following the standard format',
+          1: 'Most follow the pattern but inconsistently',
+          2: 'All in correct format with tags and structure',
         },
       },
     ],
@@ -326,8 +326,8 @@ function parseArgs() {
 
   const agent = get('agent');
   if (!agent) {
-    console.error('❌  Flag obrigatória: --agent=nome');
-    console.error(`   Agentes disponíveis: ${Object.keys(RUBRICAS).join(' | ')}`);
+    console.error('❌  Required flag: --agent=name');
+    console.error(`   Available agents: ${Object.keys(RUBRICS).join(' | ')}`);
     process.exit(1);
   }
 
@@ -338,163 +338,163 @@ function parseArgs() {
   };
 }
 
-function calcularScorePonderado(criterios: ResultadoCriterio[]): number {
-  const totalPeso = criterios.reduce((s, c) => s + c.peso, 0);
-  const scorePonderado = criterios.reduce((s, c) => {
-    const rubrica = RUBRICAS[Object.keys(RUBRICAS)[0]].criterios.find(r => r.nome === c.nome);
-    const maxScore = rubrica ? Math.max(...Object.keys(rubrica.rubrica).map(Number)) : 3;
-    return s + (c.score / maxScore) * c.peso;
+function calculateWeightedScore(criteria: CriterionResult[]): number {
+  const totalWeight = criteria.reduce((s, c) => s + c.weight, 0);
+  const weightedScore = criteria.reduce((s, c) => {
+    const rubric = RUBRICS[Object.keys(RUBRICS)[0]].criteria.find(r => r.name === c.name);
+    const maxScore = rubric ? Math.max(...Object.keys(rubric.rubric).map(Number)) : 3;
+    return s + (c.score / maxScore) * c.weight;
   }, 0);
-  return Math.round((scorePonderado / totalPeso) * 10 * 10) / 10;
+  return Math.round((weightedScore / totalWeight) * 10 * 10) / 10;
 }
 
-function carregarInput(inputFile: string, agente: string): string {
+function loadInput(inputFile: string, agent: string): string {
   if (inputFile && fs.existsSync(inputFile)) {
     return fs.readFileSync(inputFile, 'utf-8');
   }
 
-  // Tentar encontrar último relatório gerado
+  // Try to find the latest generated report
   const reportDir = 'reports';
   if (fs.existsSync(reportDir)) {
     const files = fs.readdirSync(reportDir)
-      .filter(f => f.includes(agente.replace('-', '')) && f.endsWith('.md'))
+      .filter(f => f.includes(agent.replace('-', '')) && f.endsWith('.md'))
       .sort()
       .reverse();
     if (files.length > 0) {
       const found = path.join(reportDir, files[0]);
-      console.log(`📂  Usando relatório mais recente: ${found}`);
+      console.log(`📂  Using most recent report: ${found}`);
       return fs.readFileSync(found, 'utf-8');
     }
   }
 
   throw new Error(
-    `Nenhum input encontrado. Use --input=caminho/para/output.md\n` +
-    `   Ou gere primeiro: npm run ${agente === 'failure-analyzer' ? 'analyze' : agente}`
+    `No input found. Use --input=path/to/output.md\n` +
+    `   Or generate first: npm run ${agent === 'failure-analyzer' ? 'analyze' : agent}`
   );
 }
 
-// ─── Avaliação com Claude ──────────────────────────────────────────────────
+// ─── Claude evaluation ─────────────────────────────────────────────────────
 
-async function avaliarOutput(
-  rubrica: Rubrica,
-  outputDoAgente: string
-): Promise<ResultadoAvaliacao> {
+async function evaluateOutput(
+  rubric: Rubric,
+  agentOutput: string
+): Promise<EvaluationResult> {
   const client = new Anthropic();
 
-  const sistemPrompt = `Você é um avaliador especialista de qualidade de outputs de agentes de IA.
-Seu papel é avaliar outputs de forma objetiva, imparcial e calibrada.
+  const systemPrompt = `You are an expert evaluator of AI agent output quality.
+Your role is to evaluate outputs objectively, impartially, and in a calibrated way.
 
-REGRAS FUNDAMENTAIS:
-- Avalie APENAS o output fornecido, não o que você esperaria
-- Seja preciso com os scores — não inflacione por educação
-- Se não tiver evidência suficiente para avaliar um critério, score = 1
-- Responda EXATAMENTE no formato JSON especificado
+FUNDAMENTAL RULES:
+- Evaluate ONLY the provided output, not what you would expect
+- Be precise with scores — do not inflate out of politeness
+- If you don't have enough evidence to evaluate a criterion, score = 1
+- Respond EXACTLY in the specified JSON format
 
-FORMATO DE RESPOSTA (JSON puro, sem markdown):
+RESPONSE FORMAT (pure JSON, no markdown):
 {
-  "criterios": [
+  "criteria": [
     {
-      "nome": "nome exato do critério",
-      "score": número,
-      "justificativa": "evidência específica do output que justifica o score"
+      "name": "exact criterion name",
+      "score": number,
+      "justification": "specific evidence from the output that justifies the score"
     }
   ],
-  "resumo": "2-3 frases sobre a qualidade geral do output",
-  "recomendacoes": ["recomendação específica 1", "recomendação 2"]
+  "summary": "2-3 sentences on the overall output quality",
+  "recommendations": ["specific recommendation 1", "recommendation 2"]
 }`;
 
-  const criteriosText = rubrica.criterios.map(c => `
-### ${c.nome} (peso: ${c.peso})
-${c.descricao}
-Scores possíveis:
-${Object.entries(c.rubrica).map(([s, d]) => `  ${s}: ${d}`).join('\n')}`).join('\n');
+  const criteriaText = rubric.criteria.map(c => `
+### ${c.name} (weight: ${c.weight})
+${c.description}
+Possible scores:
+${Object.entries(c.rubric).map(([s, d]) => `  ${s}: ${d}`).join('\n')}`).join('\n');
 
-  const userMessage = `Avalie o output do agente "${rubrica.agente}":
+  const userMessage = `Evaluate the output of agent "${rubric.agent}":
 
-## Critérios de avaliação:
-${criteriosText}
+## Evaluation criteria:
+${criteriaText}
 
-## Output do agente a avaliar:
-${outputDoAgente.substring(0, 6000)}
+## Agent output to evaluate:
+${agentOutput.substring(0, 6000)}
 
-Avalie cada critério com precisão. Cite trechos específicos do output como evidência.`;
+Evaluate each criterion with precision. Cite specific excerpts from the output as evidence.`;
 
-  console.log(`\n🤖  Claude avaliando output do ${rubrica.agente}...\n`);
+  console.log(`\n🤖  Claude evaluating output of ${rubric.agent}...\n`);
 
   const response = await client.messages.create({
     model: 'claude-opus-4-6',
     max_tokens: 2000,
-    system: sistemPrompt,
+    system: systemPrompt,
     messages: [{ role: 'user', content: userMessage }],
   });
 
-  const texto = response.content.find(b => b.type === 'text')?.text ?? '{}';
+  const text = response.content.find(b => b.type === 'text')?.text ?? '{}';
 
-  let parsed: { criterios: ResultadoCriterio[]; resumo: string; recomendacoes: string[] };
+  let parsed: { criteria: CriterionResult[]; summary: string; recommendations: string[] };
   try {
-    parsed = JSON.parse(texto);
+    parsed = JSON.parse(text);
   } catch {
-    // Tentar extrair JSON se vier com markdown
-    const match = texto.match(/\{[\s\S]*\}/);
-    parsed = match ? JSON.parse(match[0]) : { criterios: [], resumo: texto, recomendacoes: [] };
+    // Try to extract JSON if it comes with markdown
+    const match = text.match(/\{[\s\S]*\}/);
+    parsed = match ? JSON.parse(match[0]) : { criteria: [], summary: text, recommendations: [] };
   }
 
-  const criteriosComPeso = parsed.criterios.map(c => {
-    const rubricaCriterio = rubrica.criterios.find(r => r.nome === c.nome);
-    return { ...c, peso: rubricaCriterio?.peso ?? 1 };
+  const criteriaWithWeight = parsed.criteria.map(c => {
+    const rubricCriterion = rubric.criteria.find(r => r.name === c.name);
+    return { ...c, weight: rubricCriterion?.weight ?? 1 };
   });
 
-  const scoreFinal = calcularScorePonderado(criteriosComPeso);
+  const finalScore = calculateWeightedScore(criteriaWithWeight);
 
   return {
-    agente: rubrica.agente,
+    agent: rubric.agent,
     timestamp: new Date().toISOString(),
-    scoreFinal,
-    aprovado: scoreFinal >= rubrica.aprovadoSe,
-    criterios: criteriosComPeso,
-    resumo: parsed.resumo,
-    recomendacoes: parsed.recomendacoes ?? [],
+    finalScore,
+    passed: finalScore >= rubric.passIf,
+    criteria: criteriaWithWeight,
+    summary: parsed.summary,
+    recommendations: parsed.recommendations ?? [],
   };
 }
 
-function exibirResultado(resultado: ResultadoAvaliacao, rubrica: Rubrica): void {
-  const STATUS = resultado.aprovado ? '✅ APROVADO' : '🚨 REPROVADO';
+function displayResult(result: EvaluationResult, rubric: Rubric): void {
+  const STATUS = result.passed ? '✅ PASSED' : '🚨 FAILED';
   const BAR = '═'.repeat(60);
 
   console.log(`\n${BAR}`);
-  console.log(`  ${STATUS} — ${resultado.agente}`);
-  console.log(`  Score: ${resultado.scoreFinal}/10 (mínimo: ${rubrica.aprovadoSe}/10)`);
+  console.log(`  ${STATUS} — ${result.agent}`);
+  console.log(`  Score: ${result.finalScore}/10 (minimum: ${rubric.passIf}/10)`);
   console.log(`${BAR}\n`);
 
-  console.log('## Critérios\n');
-  for (const c of resultado.criterios) {
-    const rubricaCriterio = rubrica.criterios.find(r => r.nome === c.nome);
-    const maxScore = rubricaCriterio ? Math.max(...Object.keys(rubricaCriterio.rubrica).map(Number)) : 3;
+  console.log('## Criteria\n');
+  for (const c of result.criteria) {
+    const rubricCriterion = rubric.criteria.find(r => r.name === c.name);
+    const maxScore = rubricCriterion ? Math.max(...Object.keys(rubricCriterion.rubric).map(Number)) : 3;
     const emoji = c.score === maxScore ? '✅' : c.score === 0 ? '🚨' : '⚠️';
-    console.log(`${emoji}  **${c.nome}** [peso ${c.peso}] — ${c.score}/${maxScore}`);
-    console.log(`   ${c.justificativa}\n`);
+    console.log(`${emoji}  **${c.name}** [weight ${c.weight}] — ${c.score}/${maxScore}`);
+    console.log(`   ${c.justification}\n`);
   }
 
-  console.log(`## Resumo\n${resultado.resumo}\n`);
+  console.log(`## Summary\n${result.summary}\n`);
 
-  if (resultado.recomendacoes.length > 0) {
-    console.log('## Recomendações para melhorar o agente');
-    resultado.recomendacoes.forEach((r, i) => console.log(`${i + 1}. ${r}`));
+  if (result.recommendations.length > 0) {
+    console.log('## Recommendations to improve the agent');
+    result.recommendations.forEach((r, i) => console.log(`${i + 1}. ${r}`));
   }
 
   console.log(`\n${BAR}\n`);
 }
 
-function salvarResultado(resultado: ResultadoAvaliacao): void {
+function saveResult(result: EvaluationResult): void {
   const dir = 'reports/evals';
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
   const ts = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
-  const nomeAgente = resultado.agente.toLowerCase().replace(/\s/g, '-');
-  const filePath = path.join(dir, `eval-${nomeAgente}-${ts}.json`);
+  const agentName = result.agent.toLowerCase().replace(/\s/g, '-');
+  const filePath = path.join(dir, `eval-${agentName}-${ts}.json`);
 
-  fs.writeFileSync(filePath, JSON.stringify(resultado, null, 2), 'utf-8');
-  console.log(`📋  Resultado salvo: ${filePath}\n`);
+  fs.writeFileSync(filePath, JSON.stringify(result, null, 2), 'utf-8');
+  console.log(`📋  Result saved: ${filePath}\n`);
 }
 
 // ─── Main ──────────────────────────────────────────────────────────────────
@@ -502,36 +502,36 @@ function salvarResultado(resultado: ResultadoAvaliacao): void {
 async function main() {
   const { agent, inputFile, save } = parseArgs();
 
-  const rubrica = RUBRICAS[agent];
-  if (!rubrica) {
-    console.error(`❌  Agente desconhecido: "${agent}"`);
-    console.error(`   Disponíveis: ${Object.keys(RUBRICAS).join(' | ')}`);
+  const rubric = RUBRICS[agent];
+  if (!rubric) {
+    console.error(`❌  Unknown agent: "${agent}"`);
+    console.error(`   Available: ${Object.keys(RUBRICS).join(' | ')}`);
     process.exit(1);
   }
 
   console.log(`\n🔬  AIEvaluatorAgent`);
-  console.log(`   Avaliando: ${rubrica.agente}`);
-  console.log(`   Critérios: ${rubrica.criterios.length} | Aprovado se score ≥ ${rubrica.aprovadoSe}/10\n`);
+  console.log(`   Evaluating: ${rubric.agent}`);
+  console.log(`   Criteria: ${rubric.criteria.length} | Passes if score ≥ ${rubric.passIf}/10\n`);
 
-  let outputDoAgente: string;
+  let agentOutput: string;
   try {
-    outputDoAgente = carregarInput(inputFile, agent);
+    agentOutput = loadInput(inputFile, agent);
   } catch (err: unknown) {
     const error = err as Error;
     console.error(`❌  ${error.message}`);
     process.exit(1);
   }
 
-  const resultado = await avaliarOutput(rubrica, outputDoAgente);
-  exibirResultado(resultado, rubrica);
+  const result = await evaluateOutput(rubric, agentOutput);
+  displayResult(result, rubric);
 
-  if (save) salvarResultado(resultado);
+  if (save) saveResult(result);
 
-  // Exit code para integração com CI
-  process.exit(resultado.aprovado ? 0 : 1);
+  // Exit code for CI integration
+  process.exit(result.passed ? 0 : 1);
 }
 
 main().catch(err => {
-  console.error('\n❌  Erro fatal:', err.message);
+  console.error('\n❌  Fatal error:', err.message);
   process.exit(1);
 });

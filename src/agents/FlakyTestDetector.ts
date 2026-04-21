@@ -1,33 +1,33 @@
 /**
  * FlakyTestDetector.ts
  *
- * Agente AI que detecta testes instáveis (flaky) analisando múltiplas execuções
- * do relatório JSON do Playwright e usa Claude para classificar a causa e sugerir correções.
+ * AI agent that detects flaky tests by analyzing multiple Playwright JSON report
+ * runs and uses Claude to classify the cause and suggest fixes.
  *
- * Um teste é considerado flaky se teve resultados inconsistentes entre execuções
- * (passou em algumas e falhou em outras).
+ * A test is considered flaky if it had inconsistent results across runs
+ * (passed in some and failed in others).
  *
- * Uso:
+ * Usage:
  *   npx ts-node src/agents/FlakyTestDetector.ts
  *   npx ts-node src/agents/FlakyTestDetector.ts --history-dir=test-results/history
  *   npx ts-node src/agents/FlakyTestDetector.ts --min-runs=3
  *
  * Flags:
- *   --history-dir   Diretório com arquivos results-*.json históricos (padrão: test-results/history)
- *   --min-runs      Mínimo de execuções para considerar um teste (padrão: 2)
- *   --threshold     % de falhas para considerar flaky (padrão: 0.2 = 20%)
+ *   --history-dir   Directory with historical results-*.json files (default: test-results/history)
+ *   --min-runs      Minimum number of runs to consider a test (default: 2)
+ *   --threshold     Failure % to consider flaky (default: 0.2 = 20%)
  *
- * Como popular o histórico:
- *   Após cada execução de CI, copie test-results/results.json para
+ * How to populate history:
+ *   After each CI run, copy test-results/results.json to
  *   test-results/history/results-<timestamp>.json
- *   Ex: cp test-results/results.json test-results/history/results-$(date +%s).json
+ *   e.g., cp test-results/results.json test-results/history/results-$(date +%s).json
  */
 
 import Anthropic from '@anthropic-ai/sdk';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// ─── Tipos ─────────────────────────────────────────────────────────────────
+// ─── Types ─────────────────────────────────────────────────────────────────
 
 interface PlaywrightError {
   message: string;
@@ -113,7 +113,7 @@ function collectTestsFromSuites(
         acc.set(key, { fullTitle: key, file: currentFile, runs: [] });
       }
 
-      // Considera o resultado final (última retry ou primeiro resultado)
+      // Use the final result (last retry or first result)
       const finalResult = spec.results[spec.results.length - 1];
       if (!finalResult) continue;
 
@@ -131,18 +131,18 @@ function loadHistory(historyDir: string): Map<string, TestHistory> {
   const acc = new Map<string, TestHistory>();
 
   if (!fs.existsSync(historyDir)) {
-    // Fallback: tenta usar results.json atual como única execução
+    // Fallback: try current results.json as a single run
     const single = 'test-results/results.json';
     if (fs.existsSync(single)) {
-      console.log(`⚠️  Diretório de histórico não encontrado. Usando ${single} como referência única.`);
-      console.log('   Para detectar flakiness, adicione múltiplos results-*.json em test-results/history/\n');
+      console.log(`⚠️  History directory not found. Using ${single} as a single reference.`);
+      console.log('   To detect flakiness, add multiple results-*.json files to test-results/history/\n');
       const report: PlaywrightReport = JSON.parse(fs.readFileSync(single, 'utf-8'));
       collectTestsFromSuites(report.suites, 'run-1', '', acc);
       return acc;
     }
     throw new Error(
-      `Nenhum relatório encontrado. Execute os testes primeiro: npm test\n` +
-      `Para análise de histórico, crie: ${historyDir}/results-<timestamp>.json`
+      `No report found. Run the tests first: npm test\n` +
+      `To analyze history, create: ${historyDir}/results-<timestamp>.json`
     );
   }
 
@@ -151,10 +151,10 @@ function loadHistory(historyDir: string): Map<string, TestHistory> {
     .sort();
 
   if (files.length === 0) {
-    throw new Error(`Nenhum arquivo .json encontrado em ${historyDir}`);
+    throw new Error(`No .json files found in ${historyDir}`);
   }
 
-  console.log(`📂  Carregando ${files.length} execução(ões) de ${historyDir}...`);
+  console.log(`📂  Loading ${files.length} run(s) from ${historyDir}...`);
 
   for (const file of files) {
     const runId = path.basename(file, '.json');
@@ -186,7 +186,7 @@ function detectFlakyTests(
     const failRate = failed / total;
     const passRate = passed / total;
 
-    // Flaky: falhou pelo menos "threshold"% das vezes MAS também passou pelo menos uma vez
+    // Flaky: failed at least "threshold"% of the time BUT also passed at least once
     if (failRate >= threshold && failRate < 1.0 && passed > 0) {
       flaky.push({
         ...test,
@@ -198,39 +198,39 @@ function detectFlakyTests(
     }
   }
 
-  // Ordena pelos mais instáveis primeiro
+  // Sort by most unstable first
   return flaky.sort((a, b) => b.failRate - a.failRate);
 }
 
-// ─── Análise com Claude ────────────────────────────────────────────────────
+// ─── Claude analysis ───────────────────────────────────────────────────────
 
 async function analyzeFlakyTests(tests: FlakyTest[]): Promise<void> {
   const client = new Anthropic();
 
-  const systemPrompt = `Você é um engenheiro sênior de QA especializado em estabilidade de testes Playwright + TypeScript.
-O projeto é uma automação para OrangeHRM (https://opensource-demo.orangehrmlive.com) — uma instância demo compartilhada.
+  const systemPrompt = `You are a senior QA engineer specialized in Playwright + TypeScript test stability.
+The project is a test automation suite for OrangeHRM (https://opensource-demo.orangehrmlive.com) — a shared demo instance.
 
-Contexto do ambiente:
-- Demo compartilhado entre usuários do mundo todo → dados podem mudar entre execuções
-- CI usa 1 worker (serializado), local usa 2 workers
-- Retries em CI: 2 | Timeout por teste: 45s | Timeout por assertion: 10s
-- Auth via storageState que pode expirar
-- Dados de teste gerados com @faker-js/faker para evitar conflitos
+Environment context:
+- Shared demo used by users worldwide → data may change between runs
+- CI uses 1 worker (serialized), local uses 2 workers
+- CI retries: 2 | Test timeout: 45s | Assertion timeout: 10s
+- Auth via storageState that may expire
+- Test data generated with @faker-js/faker to avoid conflicts
 
-Categorias de flakiness que você conhece:
-1. **Race condition** — elemento aparece/desaparece antes do waitFor
-2. **Dados compartilhados** — outro usuário ou teste modificou dados no demo
-3. **Auth expirada** — storageState venceu ou foi invalidado
-4. **Timeout de rede** — demo lento em horários de pico
-5. **Seletor frágil** — CSS gerado que muda entre sessões
-6. **Dependência de ordem** — teste depende de estado deixado por outro teste
-7. **Race condition de animação** — elemento visível mas não interagível
+Flakiness categories you know:
+1. **Race condition** — element appears/disappears before waitFor
+2. **Shared data** — another user or test modified data in the demo
+3. **Expired auth** — storageState expired or invalidated
+4. **Network timeout** — demo slow during peak hours
+5. **Fragile selector** — generated CSS that changes between sessions
+6. **Order dependency** — test depends on state left by another test
+7. **Animation race condition** — element visible but not yet interactable
 
-Para cada teste flaky, forneça:
-1. **Categoria** — qual tipo de flakiness
-2. **Hipótese** — o que provavelmente causa a instabilidade
-3. **Correção** — código antes/depois
-4. **Nível de confiança** — Alto / Médio / Baixo (baseado nas evidências)`;
+For each flaky test, provide:
+1. **Category** — which type of flakiness
+2. **Hypothesis** — what likely causes the instability
+3. **Fix** — before/after code
+4. **Confidence level** — High / Medium / Low (based on evidence)`;
 
   for (let i = 0; i < tests.length; i++) {
     const test = tests[i];
@@ -239,7 +239,7 @@ Para cada teste flaky, forneça:
     console.log(`\n${'─'.repeat(60)}`);
     console.log(`🎲  [${i + 1}/${tests.length}] ${test.fullTitle}`);
     console.log(`📁  ${test.file}`);
-    console.log(`📊  ${pct}% de falhas (${Math.round(test.failRate * test.totalRuns)}/${test.totalRuns} execuções)`);
+    console.log(`📊  ${pct}% failure rate (${Math.round(test.failRate * test.totalRuns)}/${test.totalRuns} runs)`);
     console.log(`${'─'.repeat(60)}\n`);
 
     const runsTable = test.runs
@@ -247,16 +247,16 @@ Para cada teste flaky, forneça:
       .join('\n');
 
     const errorsSection = test.errors.length > 0
-      ? `\n**Erros observados:**\n${test.errors.map(e => `- ${e}`).join('\n')}`
+      ? `\n**Observed errors:**\n${test.errors.map(e => `- ${e}`).join('\n')}`
       : '';
 
-    const userMessage = `Analise este teste flaky do Playwright:
+    const userMessage = `Analyze this flaky Playwright test:
 
-**Teste:** ${test.fullTitle}
-**Arquivo:** ${test.file}
-**Taxa de falha:** ${pct}% (${Math.round(test.failRate * test.totalRuns)} falhas em ${test.totalRuns} execuções)
+**Test:** ${test.fullTitle}
+**File:** ${test.file}
+**Failure rate:** ${pct}% (${Math.round(test.failRate * test.totalRuns)} failures in ${test.totalRuns} runs)
 
-**Histórico de execuções:**
+**Run history:**
 ${runsTable}
 ${errorsSection}`;
 
@@ -286,37 +286,37 @@ ${errorsSection}`;
 async function main() {
   const { historyDir, minRuns, threshold } = parseArgs();
 
-  console.log('\n🔍  Detectando testes flaky...');
-  console.log(`   Mín. execuções: ${minRuns} | Threshold de falha: ${(threshold * 100).toFixed(0)}%\n`);
+  console.log('\n🔍  Detecting flaky tests...');
+  console.log(`   Min. runs: ${minRuns} | Failure threshold: ${(threshold * 100).toFixed(0)}%\n`);
 
   const history = loadHistory(historyDir);
-  console.log(`✅  ${history.size} testes únicos carregados.\n`);
+  console.log(`✅  ${history.size} unique tests loaded.\n`);
 
   const flakyTests = detectFlakyTests(history, minRuns, threshold);
 
   if (flakyTests.length === 0) {
-    console.log('✅  Nenhum teste flaky detectado com os critérios atuais.');
-    console.log('   Tente reduzir --threshold ou --min-runs para uma análise mais ampla.\n');
+    console.log('✅  No flaky tests detected with the current criteria.');
+    console.log('   Try lowering --threshold or --min-runs for a broader analysis.\n');
     return;
   }
 
-  console.log(`⚠️  ${flakyTests.length} teste(s) flaky detectado(s):\n`);
+  console.log(`⚠️  ${flakyTests.length} flaky test(s) detected:\n`);
   flakyTests.forEach((t, i) => {
     const pct = (t.failRate * 100).toFixed(0);
-    console.log(`  ${i + 1}. [${pct}% falha] ${t.fullTitle}`);
+    console.log(`  ${i + 1}. [${pct}% failure] ${t.fullTitle}`);
   });
 
-  console.log(`\n🤖  Analisando com Claude...\n`);
+  console.log(`\n🤖  Analyzing with Claude...\n`);
   await analyzeFlakyTests(flakyTests);
 
   console.log(`${'═'.repeat(60)}`);
-  console.log(`✅  ${flakyTests.length} teste(s) flaky analisado(s).`);
-  console.log(`\n💡  Dica: Após corrigir, adicione resultados novos ao histórico`);
-  console.log(`    para monitorar se a instabilidade foi resolvida.`);
+  console.log(`✅  ${flakyTests.length} flaky test(s) analyzed.`);
+  console.log(`\n💡  Tip: After fixing, add new results to history`);
+  console.log(`    to monitor whether the instability was resolved.`);
   console.log(`${'═'.repeat(60)}\n`);
 }
 
 main().catch(err => {
-  console.error('\n❌  Erro fatal:', err.message);
+  console.error('\n❌  Fatal error:', err.message);
   process.exit(1);
 });

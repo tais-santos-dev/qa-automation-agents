@@ -1,23 +1,23 @@
 /**
  * TestGeneratorAgent.ts
  *
- * Agente AI que navega em uma página do OrangeHRM usando Playwright,
- * extrai a estrutura de elementos interativos e usa Claude para gerar:
- *   1. Um Page Object (extends BasePage)
- *   2. Um spec completo com cenários positivos, negativos e edge cases
+ * AI agent that navigates an OrangeHRM page using Playwright,
+ * extracts the structure of interactive elements, and uses Claude to generate:
+ *   1. A Page Object (extends BasePage)
+ *   2. A complete spec with positive, negative, and edge case scenarios
  *
- * Uso:
+ * Usage:
  *   npm run generate -- --url=/web/index.php/leave/viewLeaveList
  *   npm run generate -- --url=/web/index.php/admin/viewAdminModule --module=admin
  *
  * Flags:
- *   --url       Caminho da rota (obrigatório). Ex: /web/index.php/leave/viewLeaveList
- *   --module    Nome do módulo (opcional, inferido da URL se omitido)
- *   --output    Diretório de saída (padrão: src/generated)
+ *   --url       Route path (required). e.g., /web/index.php/leave/viewLeaveList
+ *   --module    Module name (optional, inferred from URL if omitted)
+ *   --output    Output directory (default: src/generated)
  *
- * Pré-requisitos:
- *   - ANTHROPIC_API_KEY no .env
- *   - BASE_URL no .env (padrão: https://opensource-demo.orangehrmlive.com)
+ * Prerequisites:
+ *   - ANTHROPIC_API_KEY in .env
+ *   - BASE_URL in .env (default: https://opensource-demo.orangehrmlive.com)
  */
 
 /// <reference lib="dom" />
@@ -38,7 +38,7 @@ function parseArgs() {
 
   const url = get('url');
   if (!url) {
-    console.error('❌  Flag obrigatória: --url=/web/index.php/...');
+    console.error('❌  Required flag: --url=/web/index.php/...');
     process.exit(1);
   }
 
@@ -75,7 +75,7 @@ function extractCodeBlocks(text: string): string[] {
   return [...text.matchAll(regex)].map(m => m[1].trim());
 }
 
-// ─── Inspeção da página com Playwright ────────────────────────────────────
+// ─── Page inspection with Playwright ──────────────────────────────────────
 
 interface PageInspection {
   url: string;
@@ -92,11 +92,11 @@ async function inspectPage(fullUrl: string): Promise<PageInspection> {
   const authPath = 'auth/admin-storage-state.json';
   const hasAuth = fs.existsSync(authPath);
 
-  console.log(`\n🌐  Abrindo ${fullUrl}...`);
+  console.log(`\n🌐  Opening ${fullUrl}...`);
   if (hasAuth) {
-    console.log('🔑  Usando sessão autenticada existente.');
+    console.log('🔑  Using existing authenticated session.');
   } else {
-    console.log('⚠️  Sem sessão salva — fazendo login manual.');
+    console.log('⚠️  No saved session — performing manual login.');
   }
 
   const browser = await chromium.launch({ headless: true });
@@ -106,7 +106,7 @@ async function inspectPage(fullUrl: string): Promise<PageInspection> {
 
   const page = await context.newPage();
 
-  // Login manual se não houver auth
+  // Manual login if no auth session
   if (!hasAuth) {
     const baseUrl = process.env.BASE_URL ?? 'https://opensource-demo.orangehrmlive.com';
     await page.goto(`${baseUrl}/web/index.php/auth/login`, { waitUntil: 'networkidle' });
@@ -155,11 +155,11 @@ async function inspectPage(fullUrl: string): Promise<PageInspection> {
   });
 
   await browser.close();
-  console.log(`✅  Inspeção concluída: ${inspection.inputs.length} inputs, ${inspection.buttons.length} botões, ${inspection.tables.length} tabela(s)\n`);
+  console.log(`✅  Inspection complete: ${inspection.inputs.length} inputs, ${inspection.buttons.length} buttons, ${inspection.tables.length} table(s)\n`);
   return inspection;
 }
 
-// ─── Geração com Claude ────────────────────────────────────────────────────
+// ─── Claude generation ─────────────────────────────────────────────────────
 
 async function generateWithClaude(
   client: Anthropic,
@@ -168,9 +168,9 @@ async function generateWithClaude(
   className: string
 ): Promise<string> {
 
-  const systemPrompt = `Você é um especialista em automação de testes Playwright + TypeScript para o projeto OrangeHRM.
+  const systemPrompt = `You are a Playwright + TypeScript test automation specialist for the OrangeHRM project.
 
-## Padrões obrigatórios do projeto
+## Required project standards
 
 ### Page Object (extends BasePage)
 \`\`\`typescript
@@ -179,64 +179,64 @@ import { BasePage } from '../utils/BasePage';
 import { AppRoute } from '../constants/Routes';
 
 export class ${className} extends BasePage {
-  // Locators: private (uso interno) ou protected (herdável)
-  private get elemento() { return this.page.locator('[seletor-semantico]'); }
+  // Locators: private (internal use) or protected (inheritable)
+  private get element() { return this.page.locator('[semantic-selector]'); }
 
   constructor(page: Page) { super(page); }
 
-  async open(): Promise<void> { await this.navigate(AppRoute.ROTA); }
+  async open(): Promise<void> { await this.navigate(AppRoute.ROUTE); }
 
-  // Ações: usam this.click(), this.fill(), this.selectOption() — nunca page.locator().click()
-  async fazerAcao(valor: string): Promise<void> {
-    await this.fill(this.elemento, valor);
-    await this.click(this.botaoSubmit);
+  // Actions: use this.click(), this.fill(), this.selectOption() — never page.locator().click()
+  async doAction(value: string): Promise<void> {
+    await this.fill(this.element, value);
+    await this.click(this.submitButton);
     await this.waitForPageLoad();
   }
 
-  async obterTexto(): Promise<string> { return this.getText(this.elemento); }
-  async expectSucesso(): Promise<void> { await this.expectUrlContains('fragmento'); }
+  async getText(): Promise<string> { return this.getText(this.element); }
+  async expectSuccess(): Promise<void> { await this.expectUrlContains('fragment'); }
 }
 \`\`\`
 
 ### Spec
 - Import: \`import { test, expect } from '../../fixtures/test.fixture';\`
-- Nomes em português: \`deve [verbo] [resultado]\`
-- Tags obrigatórias: \`{ tag: ['@smoke', '@${moduleName}'] }\`
-- Comentários: \`// Arrange\`, \`// Act\`, \`// Assert\`
-- Sem magic strings: use enums de \`@constants/Messages\`
-- Estrutura: \`Positivo\`, \`Negativo\`, \`Edge Cases\`
+- Test names: \`should [verb] [outcome]\`
+- Required tags: \`{ tag: ['@smoke', '@${moduleName}'] }\`
+- Comments: \`// Arrange\`, \`// Act\`, \`// Assert\`
+- No magic strings: use enums from \`@constants/Messages\`
+- Structure: \`Positive\`, \`Negative\`, \`Edge Cases\`
 
-Gere DOIS blocos \`\`\`typescript:
-1. O Page Object completo
-2. O spec completo
+Generate TWO \`\`\`typescript blocks:
+1. The complete Page Object
+2. The complete spec
 
-Prefira seletores semânticos: \`[name="x"]\`, \`[type="submit"]\`, \`[data-testid="x"]\`.
-Evite seletores frágeis baseados em posição ou classes geradas.`;
+Prefer semantic selectors: \`[name="x"]\`, \`[type="submit"]\`, \`[data-testid="x"]\`.
+Avoid fragile position-based or generated-class selectors.`;
 
-  const userMessage = `Gere o Page Object e o spec para esta página do OrangeHRM:
+  const userMessage = `Generate the Page Object and spec for this OrangeHRM page:
 
-**Módulo:** ${moduleName}
-**Classe:** ${className}
-**URL inspecionada:** ${inspection.url}
-**Título da página:** ${inspection.title}
+**Module:** ${moduleName}
+**Class:** ${className}
+**Inspected URL:** ${inspection.url}
+**Page title:** ${inspection.title}
 
-**Elementos encontrados:**
+**Elements found:**
 
 Inputs (${inspection.inputs.length}):
 ${inspection.inputs.map(i => `  - name="${i.name}" type="${i.type}" placeholder="${i.placeholder}" → ${i.selector}`).join('\n')}
 
-Botões (${inspection.buttons.length}):
+Buttons (${inspection.buttons.length}):
 ${inspection.buttons.map(b => `  - "${b.text}" type="${b.type}" → ${b.selector}`).join('\n')}
 
 Selects/Dropdowns (${inspection.selects.length}):
 ${inspection.selects.map(s => `  - "${s.name}" → ${s.selector}`).join('\n')}
 
-Tabelas (${inspection.tables.length}):
+Tables (${inspection.tables.length}):
 ${inspection.tables.map(t => `  - headers: [${t.headers.join(', ')}] → ${t.selector}`).join('\n')}
 
 Headings: ${inspection.headings.join(' | ')}`;
 
-  console.log('🤖  Gerando código com Claude Opus 4.6...\n');
+  console.log('🤖  Generating code with Claude Opus 4.6...\n');
 
   const stream = client.messages.stream({
     model: 'claude-opus-4-6',
@@ -267,42 +267,42 @@ async function main() {
   const className = `${toPascalCase(moduleName)}Page`;
 
   console.log(`\n🚀  TestGeneratorAgent`);
-  console.log(`   Módulo: ${moduleName} | Classe: ${className}`);
+  console.log(`   Module: ${moduleName} | Class: ${className}`);
 
-  // 1. Inspecionar a página
+  // 1. Inspect the page
   const inspection = await inspectPage(fullUrl);
 
-  // 2. Gerar código com Claude
+  // 2. Generate code with Claude
   const client = new Anthropic();
   const generatedText = await generateWithClaude(client, inspection, moduleName, className);
 
-  // 3. Salvar arquivos
+  // 3. Save files
   const blocks = extractCodeBlocks(generatedText);
 
   if (blocks.length >= 1) {
     const poPath = saveFile(path.join(outputDir, 'pages'), `${className}.ts`, blocks[0]);
-    console.log(`✅  Page Object salvo: ${poPath}`);
+    console.log(`✅  Page Object saved: ${poPath}`);
   }
 
   if (blocks.length >= 2) {
     const specPath = saveFile(path.join(outputDir, 'tests'), `${moduleName}.spec.ts`, blocks[1]);
-    console.log(`✅  Spec salvo: ${specPath}`);
+    console.log(`✅  Spec saved: ${specPath}`);
   }
 
   if (blocks.length < 2) {
     const rawPath = saveFile(outputDir, `${moduleName}-output.md`, generatedText);
-    console.log(`⚠️  Output salvo para revisão manual: ${rawPath}`);
+    console.log(`⚠️  Output saved for manual review: ${rawPath}`);
   }
 
-  console.log(`\n📋  Próximos passos:`);
-  console.log(`   1. Mova os arquivos para src/pages/ e src/tests/${moduleName}/`);
-  console.log(`   2. Adicione AppRoute.${moduleName.toUpperCase()} em src/constants/Routes.ts`);
-  console.log(`   3. Adicione a fixture em src/fixtures/test.fixture.ts`);
-  console.log(`   4. Use @test-reviewer para validar o spec gerado`);
-  console.log(`   5. Execute: npx playwright test src/tests/${moduleName}/ --headed\n`);
+  console.log(`\n📋  Next steps:`);
+  console.log(`   1. Move files to src/pages/ and src/tests/${moduleName}/`);
+  console.log(`   2. Add AppRoute.${moduleName.toUpperCase()} to src/constants/Routes.ts`);
+  console.log(`   3. Add the fixture to src/fixtures/test.fixture.ts`);
+  console.log(`   4. Use @test-reviewer to validate the generated spec`);
+  console.log(`   5. Run: npx playwright test src/tests/${moduleName}/ --headed\n`);
 }
 
 main().catch(err => {
-  console.error('\n❌  Erro:', err.message);
+  console.error('\n❌  Error:', err.message);
   process.exit(1);
 });

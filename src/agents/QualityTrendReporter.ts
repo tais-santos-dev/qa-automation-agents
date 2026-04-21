@@ -1,15 +1,15 @@
 /**
  * QualityTrendReporter.ts
  *
- * Agente AI que lê múltiplas execuções históricas do Playwright, calcula métricas
- * de qualidade ao longo do tempo e usa Claude para gerar um relatório narrativo
- * com tendências, alertas e recomendações.
+ * AI agent that reads multiple historical Playwright runs, calculates quality
+ * metrics over time, and uses Claude to generate a narrative report with
+ * trends, alerts, and recommendations.
  *
- * Uso:
+ * Usage:
  *   npm run report:trend
  *   npm run report:trend -- --history-dir=test-results/history --output=reports/trend.md
  *
- * Como popular o histórico (adicionar ao CI):
+ * How to populate history (add to CI):
  *   mkdir -p test-results/history
  *   cp test-results/results.json "test-results/history/results-$(date +%Y%m%d-%H%M%S).json"
  */
@@ -18,7 +18,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// ─── Tipos ─────────────────────────────────────────────────────────────────
+// ─── Types ─────────────────────────────────────────────────────────────────
 
 interface PlaywrightStats {
   expected: number;
@@ -96,7 +96,7 @@ function collectTests(suites: PlaywrightSuite[], file = ''): PlaywrightTest[] {
 function loadHistory(historyDir: string): RunSnapshot[] {
   const snapshots: RunSnapshot[] = [];
 
-  // Inclui results.json atual como referência se existir
+  // Include current results.json as reference if it exists
   const sources: { file: string; runId: string }[] = [];
 
   if (fs.existsSync(historyDir)) {
@@ -107,18 +107,18 @@ function loadHistory(historyDir: string): RunSnapshot[] {
   }
 
   if (sources.length === 0 && fs.existsSync('test-results/results.json')) {
-    sources.push({ file: 'test-results/results.json', runId: 'run-atual' });
+    sources.push({ file: 'test-results/results.json', runId: 'current-run' });
   }
 
   if (sources.length === 0) {
     throw new Error(
-      'Nenhum relatório encontrado.\n' +
-      '   Execute os testes: npm test\n' +
-      `   Adicione histórico em: ${historyDir}/results-YYYYMMDD.json`
+      'No report found.\n' +
+      '   Run the tests: npm test\n' +
+      `   Add history at: ${historyDir}/results-YYYYMMDD.json`
     );
   }
 
-  console.log(`📂  Carregando ${sources.length} execução(ões)...`);
+  console.log(`📂  Loading ${sources.length} run(s)...`);
 
   for (const { file, runId } of sources) {
     const report: PlaywrightReport = JSON.parse(fs.readFileSync(file, 'utf-8'));
@@ -134,7 +134,7 @@ function loadHistory(historyDir: string): RunSnapshot[] {
       .sort((a, b) => b.duration - a.duration)
       .slice(0, 5);
 
-    // Extrai timestamp do nome do arquivo (ex: results-20260404-1430.json)
+    // Extract timestamp from filename (e.g., results-20260404-1430.json)
     const tsMatch = runId.match(/(\d{8})-?(\d{4})?/);
     const timestamp = tsMatch
       ? `${tsMatch[1].slice(0, 4)}-${tsMatch[1].slice(4, 6)}-${tsMatch[1].slice(6, 8)}${tsMatch[2] ? ` ${tsMatch[2].slice(0, 2)}:${tsMatch[2].slice(2)}` : ''}`
@@ -154,7 +154,7 @@ function loadHistory(historyDir: string): RunSnapshot[] {
 }
 
 function computeTrends(runs: RunSnapshot[]): TrendMetrics {
-  // Testes que mais falharam ao longo das execuções
+  // Tests that failed most across runs
   const failCounts = new Map<string, number>();
   const testTotals = new Map<string, number>();
 
@@ -174,7 +174,7 @@ function computeTrends(runs: RunSnapshot[]): TrendMetrics {
   const avgDuration = runs.reduce((s, r) => s + r.stats.duration, 0) / runs.length;
   const totalFlakyCount = runs.reduce((s, r) => s + r.stats.flaky, 0);
 
-  // Tendência: compara primeira metade com segunda metade
+  // Trend: compare first half with second half
   const half = Math.floor(runs.length / 2);
   let passRateTrend: TrendMetrics['passRateTrend'] = 'stable';
   let durationTrend: TrendMetrics['durationTrend'] = 'stable';
@@ -197,36 +197,36 @@ function computeTrends(runs: RunSnapshot[]): TrendMetrics {
   return { runs, mostFailingTests, avgPassRate, passRateTrend, avgDuration, durationTrend, totalFlakyCount };
 }
 
-// ─── Geração do relatório com Claude ──────────────────────────────────────
+// ─── Claude report generation ──────────────────────────────────────────────
 
 async function generateReport(metrics: TrendMetrics): Promise<string> {
   const client = new Anthropic();
 
-  const systemPrompt = `Você é um QA Lead sênior responsável por apresentar o status de qualidade para o time e stakeholders.
-Gere um relatório de tendências claro, objetivo e acionável em Markdown.
+  const systemPrompt = `You are a senior QA Lead responsible for presenting quality status to the team and stakeholders.
+Generate a clear, objective, and actionable trend report in Markdown.
 
-O relatório deve ter:
-## Relatório de Qualidade — [período]
+The report should have:
+## Quality Report — [period]
 
-### Resumo Executivo
-[3-4 frases: estado geral, tendência principal, ponto de atenção]
+### Executive Summary
+[3-4 sentences: overall state, main trend, key concern]
 
-### Métricas do Período
-[tabela ou lista com os números principais]
+### Period Metrics
+[table or list with the main numbers]
 
-### Tendências
-[o que está melhorando, o que está piorando]
+### Trends
+[what is improving, what is worsening]
 
-### Testes Problemáticos
-[os testes que mais falharam, com interpretação]
+### Problematic Tests
+[the most failing tests, with interpretation]
 
-### Alertas 🚨
-[problemas que precisam de atenção imediata]
+### Alerts 🚨
+[issues that need immediate attention]
 
-### Recomendações
-[lista priorizada de ações concretas]
+### Recommendations
+[prioritized list of concrete actions]
 
-Use emojis para facilitar a leitura. Seja direto — gestores e devs vão ler este relatório.`;
+Use emojis to aid readability. Be direct — managers and devs will read this report.`;
 
   const runsTable = metrics.runs.map(r => {
     const pct = (r.passRate * 100).toFixed(0);
@@ -235,7 +235,7 @@ Use emojis para facilitar a leitura. Seja direto — gestores e devs vão ler es
   }).join('\n');
 
   const failingTable = metrics.mostFailingTests.slice(0, 8).map(t =>
-    `  ${t.failCount}/${t.total} execuções falhou: "${t.title}"`
+    `  ${t.failCount}/${t.total} runs failed: "${t.title}"`
   ).join('\n');
 
   const trendEmoji = {
@@ -243,26 +243,26 @@ Use emojis para facilitar a leitura. Seja direto — gestores e devs vão ler es
     duration: { faster: '⚡', slower: '🐢', stable: '➡️' },
   };
 
-  const userMessage = `Gere o relatório de qualidade com base nestes dados:
+  const userMessage = `Generate the quality report based on this data:
 
-**Período analisado:** ${metrics.runs[0]?.timestamp} → ${metrics.runs.at(-1)?.timestamp}
-**Total de execuções analisadas:** ${metrics.runs.length}
+**Period analyzed:** ${metrics.runs[0]?.timestamp} → ${metrics.runs.at(-1)?.timestamp}
+**Total runs analyzed:** ${metrics.runs.length}
 
-**Histórico de execuções:**
-  Data | Pass Rate | Flaky | Duração
+**Run history:**
+  Date | Pass Rate | Flaky | Duration
 ${runsTable}
 
-**Métricas agregadas:**
-- Pass rate médio: ${(metrics.avgPassRate * 100).toFixed(1)}%
-- Tendência de qualidade: ${trendEmoji.passRate[metrics.passRateTrend]} ${metrics.passRateTrend}
-- Duração média: ${(metrics.avgDuration / 1000).toFixed(0)}s
-- Tendência de performance: ${trendEmoji.duration[metrics.durationTrend]} ${metrics.durationTrend}
-- Total de ocorrências flaky no período: ${metrics.totalFlakyCount}
+**Aggregated metrics:**
+- Average pass rate: ${(metrics.avgPassRate * 100).toFixed(1)}%
+- Quality trend: ${trendEmoji.passRate[metrics.passRateTrend]} ${metrics.passRateTrend}
+- Average duration: ${(metrics.avgDuration / 1000).toFixed(0)}s
+- Performance trend: ${trendEmoji.duration[metrics.durationTrend]} ${metrics.durationTrend}
+- Total flaky occurrences in period: ${metrics.totalFlakyCount}
 
-**Testes que mais falharam:**
-${failingTable || '  Nenhum teste falhou em mais de uma execução.'}`;
+**Most failing tests:**
+${failingTable || '  No test failed in more than one run.'}`;
 
-  console.log('\n🤖  Gerando relatório com Claude Opus 4.6...\n');
+  console.log('\n🤖  Generating report with Claude Opus 4.6...\n');
 
   const stream = client.messages.stream({
     model: 'claude-opus-4-6',
@@ -294,8 +294,8 @@ async function main() {
   const runs = loadHistory(historyDir);
   const metrics = computeTrends(runs);
 
-  console.log(`✅  ${runs.length} execução(ões) carregada(s).`);
-  console.log(`   Pass rate médio: ${(metrics.avgPassRate * 100).toFixed(1)}% | Tendência: ${metrics.passRateTrend}\n`);
+  console.log(`✅  ${runs.length} run(s) loaded.`);
+  console.log(`   Average pass rate: ${(metrics.avgPassRate * 100).toFixed(1)}% | Trend: ${metrics.passRateTrend}\n`);
 
   const report = await generateReport(metrics);
 
@@ -303,16 +303,16 @@ async function main() {
     const outputPath = path.resolve(output);
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
     fs.writeFileSync(outputPath, report, 'utf-8');
-    console.log(`✅  Relatório salvo em: ${outputPath}`);
+    console.log(`✅  Report saved at: ${outputPath}`);
   }
 
   console.log('═'.repeat(60));
-  console.log('✅  Relatório gerado com sucesso.');
-  console.log('   Dica: adicione --output=reports/trend.md para salvar o arquivo.');
+  console.log('✅  Report generated successfully.');
+  console.log('   Tip: add --output=reports/trend.md to save the file.');
   console.log('═'.repeat(60) + '\n');
 }
 
 main().catch(err => {
-  console.error('\n❌  Erro:', err.message);
+  console.error('\n❌  Error:', err.message);
   process.exit(1);
 });

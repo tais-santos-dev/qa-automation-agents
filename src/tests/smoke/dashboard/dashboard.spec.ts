@@ -1,39 +1,39 @@
 /**
  * dashboard.spec.ts
  *
- * Suite de testes smoke para o Dashboard do OrangeHRM.
+ * Smoke test suite for the OrangeHRM Dashboard.
  *
- * Estratégia:
- *  - Usa o projeto `chromium:authenticated` (storageState pré-carregado).
- *  - A fixture `dashboardPage` abre /dashboard/index automaticamente.
- *  - Testa carregamento dos widgets e elementos principais da tela.
+ * Strategy:
+ *  - Uses the `chromium:authenticated` project (pre-loaded storageState).
+ *  - The `dashboardPage` fixture opens /dashboard/index automatically.
+ *  - Tests widget load and main screen elements.
  *
- * Cenários cobertos:
- *  ✅ [Positivo]   Dashboard carrega com URL correta
- *  ✅ [Positivo]   Pelo menos um widget visível na tela
- *  ✅ [Positivo]   Widget "Time at Work" está presente
- *  ✅ [Positivo]   Widget "My Actions" está presente
- *  ✅ [Positivo]   Widget "Quick Launch" com ícones de atalho visíveis
- *  ⚠️  [Edge Case] Dashboard permanece estável após reload
+ * Scenarios covered:
+ *  ✅ [Positive]   Dashboard loads with correct URL
+ *  ✅ [Positive]   At least one widget is visible on screen
+ *  ✅ [Positive]   "Time at Work" widget is present
+ *  ✅ [Positive]   "My Actions" widget is present
+ *  ✅ [Positive]   "Quick Launch" widget with shortcut icons is visible
+ *  ⚠️  [Edge Case] Dashboard remains stable after reload
  */
 
 import { test, expect } from '../../../fixtures/test.fixture';
 import { DashboardWidget, PageTitle } from '../../../constants/Messages';
 
-// ─── Suite Principal ──────────────────────────────────────────────────────
+// ─── Main Suite ───────────────────────────────────────────────────────────
 
-test.describe('Dashboard — Tela Principal', () => {
+test.describe('Dashboard — Main Screen', () => {
 
   test.beforeEach(async ({ dashboardPage }) => {
     await dashboardPage.expectDashboardLoaded();
   });
 
-  // ─── Cenários Positivos ───────────────────────────────────────────────────
+  // ─── Positive Scenarios ───────────────────────────────────────────────────
 
-  test.describe('Positivo', () => {
+  test.describe('Positive', () => {
 
     test(
-      'deve carregar o dashboard com a URL correta após autenticação',
+      'should load the dashboard with the correct URL after authentication',
       { tag: ['@smoke', '@dashboard'] },
       async ({ dashboardPage }) => {
         const title = await dashboardPage.getPageTitle();
@@ -42,7 +42,7 @@ test.describe('Dashboard — Tela Principal', () => {
     );
 
     test(
-      'deve exibir ao menos um widget na tela do dashboard',
+      'should display at least one widget on the dashboard screen',
       { tag: ['@smoke', '@dashboard'] },
       async ({ dashboardPage }) => {
         const widgetCount = await dashboardPage.getWidgetCount();
@@ -51,7 +51,7 @@ test.describe('Dashboard — Tela Principal', () => {
     );
 
     test(
-      'deve exibir o widget "Time at Work" no dashboard',
+      'should display the "Time at Work" widget on the dashboard',
       { tag: ['@smoke', '@dashboard'] },
       async ({ dashboardPage }) => {
         await dashboardPage.expectWidgetVisible(DashboardWidget.TIME_AT_WORK);
@@ -59,7 +59,7 @@ test.describe('Dashboard — Tela Principal', () => {
     );
 
     test(
-      'deve exibir o widget "My Actions" no dashboard',
+      'should display the "My Actions" widget on the dashboard',
       { tag: ['@smoke', '@dashboard'] },
       async ({ dashboardPage }) => {
         await dashboardPage.expectWidgetVisible(DashboardWidget.MY_ACTIONS);
@@ -67,7 +67,7 @@ test.describe('Dashboard — Tela Principal', () => {
     );
 
     test(
-      'deve exibir o widget "Quick Launch" com ícones de atalho',
+      'should display the "Quick Launch" widget with shortcut icons',
       { tag: ['@smoke', '@dashboard'] },
       async ({ dashboardPage }) => {
         await dashboardPage.expectWidgetVisible(DashboardWidget.QUICK_LAUNCH);
@@ -83,13 +83,13 @@ test.describe('Dashboard — Tela Principal', () => {
   test.describe('Edge Cases', () => {
 
     test(
-      'deve manter widgets visíveis após recarregamento da página',
+      'should keep widgets visible after page reload',
       { tag: ['@regression', '@dashboard'] },
       async ({ page, dashboardPage }) => {
-        // Act — recarrega a página
+        // Act — reload the page
         await page.reload({ waitUntil: 'load' });
 
-        // Assert — dashboard continua carregado com widgets
+        // Assert — dashboard remains loaded with widgets
         await dashboardPage.expectDashboardLoaded();
         const widgetCount = await dashboardPage.getWidgetCount();
         expect(widgetCount).toBeGreaterThan(0);

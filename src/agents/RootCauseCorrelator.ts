@@ -1,11 +1,11 @@
 /**
  * RootCauseCorrelator.ts
  *
- * Agente AI que agrupa falhas de teste por padrão e usa Claude para identificar
- * se múltiplas falhas compartilham uma causa raiz comum — evitando que o time
- * investigue 8 falhas separadas quando na verdade é 1 problema só.
+ * AI agent that groups test failures by pattern and uses Claude to identify
+ * whether multiple failures share a common root cause — preventing the team
+ * from investigating 8 separate failures when it's actually just 1 problem.
  *
- * Uso:
+ * Usage:
  *   npm run correlate
  *   npm run correlate -- --file=test-results/results.json
  */
@@ -14,7 +14,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// ─── Tipos ─────────────────────────────────────────────────────────────────
+// ─── Types ─────────────────────────────────────────────────────────────────
 
 interface PlaywrightError {
   message: string;
@@ -125,7 +125,7 @@ function groupFailures(failures: FailedTest[]): FailureGroup[] {
   const groups = new Map<string, FailedTest[]>();
 
   for (const failure of failures) {
-    // Agrupa por tipo de erro + padrão normalizado
+    // Group by error type + normalized pattern
     const key = `${failure.errorType}::${normalizeError(failure.errorMessage)}`;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(failure);
@@ -140,63 +140,63 @@ function groupFailures(failures: FailedTest[]): FailureGroup[] {
     .sort((a, b) => b.tests.length - a.tests.length);
 }
 
-// ─── Análise com Claude ────────────────────────────────────────────────────
+// ─── Claude analysis ───────────────────────────────────────────────────────
 
 async function correlate(groups: FailureGroup[], stats: PlaywrightReport['stats']): Promise<void> {
   const client = new Anthropic();
 
   const totalFailed = groups.reduce((sum, g) => sum + g.tests.length, 0);
 
-  const systemPrompt = `Você é um engenheiro sênior de QA especializado em diagnóstico de falhas para o projeto OrangeHRM.
-O sistema testado é uma demo pública compartilhada (https://opensource-demo.orangehrmlive.com) — sujeita a instabilidade, dados de terceiros e lentidão em horários de pico.
+  const systemPrompt = `You are a senior QA engineer specialized in failure diagnosis for the OrangeHRM project.
+The system under test is a public shared demo (https://opensource-demo.orangehrmlive.com) — subject to instability, third-party data, and peak-hour slowness.
 
-Seu papel é analisar grupos de falhas e determinar:
-1. Se os grupos têm uma causa raiz COMUM (problema de infraestrutura, auth, deploy)
-2. Ou se são falhas INDEPENDENTES que devem ser investigadas separadamente
-3. A prioridade de investigação (o que resolver primeiro)
+Your role is to analyze failure groups and determine:
+1. Whether the groups share a COMMON root cause (infrastructure, auth, deploy issue)
+2. Or whether they are INDEPENDENT failures that should be investigated separately
+3. The investigation priority (what to resolve first)
 
-Categorias de causa raiz que você conhece:
-- **Infraestrutura** — demo fora do ar, lento, rate limiting
-- **Auth** — storageState expirado, sessão inválida
-- **Deploy** — mudança na UI quebrou locators em massa
-- **Dados** — outro usuário modificou dados compartilhados
-- **Ambiente** — timeout de CI, diferença de fuso horário
-- **Código** — bug real introduzido recentemente
+Root cause categories you know:
+- **Infrastructure** — demo down, slow, rate limiting
+- **Auth** — storageState expired, invalid session
+- **Deploy** — UI change broke locators in bulk
+- **Data** — another user modified shared data
+- **Environment** — CI timeout, timezone difference
+- **Code** — real bug recently introduced
 
-Formato da resposta:
-## Diagnóstico de Causa Raiz
+Response format:
+## Root Cause Diagnosis
 
-### Veredicto
-[1 parágrafo: existe causa raiz comum? qual é?]
+### Verdict
+[1 paragraph: is there a common root cause? what is it?]
 
-### Grupos analisados
-Para cada grupo: tipo, causa provável, confiança (Alta/Média/Baixa), ação recomendada
+### Groups analyzed
+For each group: type, likely cause, confidence (High/Medium/Low), recommended action
 
-### Plano de ação
-Lista priorizada do que fazer primeiro
+### Action plan
+Prioritized list of what to do first
 
-### Impacto
-Quantos testes seriam corrigidos resolvendo cada causa`;
+### Impact
+How many tests would be fixed by resolving each cause`;
 
   const groupsSummary = groups.map((g, i) => {
     const samples = g.tests.slice(0, 3).map(t =>
-      `    - "${t.title}" (${t.file})\n      Erro: ${t.errorMessage.slice(0, 100)}`
+      `    - "${t.title}" (${t.file})\n      Error: ${t.errorMessage.slice(0, 100)}`
     ).join('\n');
-    return `**Grupo ${i + 1} — Tipo: ${g.type} | ${g.tests.length} teste(s)**
-  Padrão de erro: "${g.pattern}"
-  Exemplos:
+    return `**Group ${i + 1} — Type: ${g.type} | ${g.tests.length} test(s)**
+  Error pattern: "${g.pattern}"
+  Examples:
 ${samples}`;
   }).join('\n\n');
 
-  const userMessage = `Analise estas falhas do relatório Playwright:
+  const userMessage = `Analyze these failures from the Playwright report:
 
-**Resumo:** ${stats.unexpected} falha(s) em ${stats.expected + stats.unexpected} testes | Duração: ${(stats.duration / 1000).toFixed(1)}s
+**Summary:** ${stats.unexpected} failure(s) in ${stats.expected + stats.unexpected} tests | Duration: ${(stats.duration / 1000).toFixed(1)}s
 
-**${groups.length} grupo(s) de falha identificado(s) (${totalFailed} testes no total):**
+**${groups.length} failure group(s) identified (${totalFailed} tests total):**
 
 ${groupsSummary}`;
 
-  console.log('\n🤖  Correlacionando com Claude Opus 4.6...\n');
+  console.log('\n🤖  Correlating with Claude Opus 4.6...\n');
   console.log('─'.repeat(60));
 
   const stream = client.messages.stream({
@@ -223,8 +223,8 @@ async function main() {
   const filePath = path.resolve(file);
 
   if (!fs.existsSync(filePath)) {
-    console.error(`❌  Relatório não encontrado: ${filePath}`);
-    console.error('   Execute os testes primeiro: npm test');
+    console.error(`❌  Report not found: ${filePath}`);
+    console.error('   Run the tests first: npm test');
     process.exit(1);
   }
 
@@ -232,25 +232,25 @@ async function main() {
   const { stats } = report;
 
   console.log('\n🔗  Root Cause Correlator');
-  console.log(`📊  ${stats.unexpected} falha(s) | ${stats.expected} passou | ${stats.flaky} flaky\n`);
+  console.log(`📊  ${stats.unexpected} failure(s) | ${stats.expected} passed | ${stats.flaky} flaky\n`);
 
   if (stats.unexpected === 0) {
-    console.log('✅  Nenhuma falha encontrada. Nada a correlacionar.\n');
+    console.log('✅  No failures found. Nothing to correlate.\n');
     return;
   }
 
   const failures = extractFailures(report.suites);
   const groups = groupFailures(failures);
 
-  console.log(`🗂️  ${groups.length} grupo(s) de falha identificado(s):`);
+  console.log(`🗂️  ${groups.length} failure group(s) identified:`);
   groups.forEach((g, i) => {
-    console.log(`   ${i + 1}. [${g.type}] ${g.tests.length} teste(s) — "${g.pattern.slice(0, 60)}..."`);
+    console.log(`   ${i + 1}. [${g.type}] ${g.tests.length} test(s) — "${g.pattern.slice(0, 60)}..."`);
   });
 
   await correlate(groups, stats);
 }
 
 main().catch(err => {
-  console.error('\n❌  Erro:', err.message);
+  console.error('\n❌  Error:', err.message);
   process.exit(1);
 });

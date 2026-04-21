@@ -1,19 +1,19 @@
 /**
  * QualityTrendReporterAgent.ts
  *
- * Agente AI que analisa tendências de qualidade ao longo do tempo.
- * Lê múltiplas execuções de testes, calcula métricas por run e usa Claude
- * para gerar um relatório de tendência com insights para o time.
+ * AI agent that analyzes quality trends over time.
+ * Reads multiple test runs, calculates per-run metrics, and uses Claude
+ * to generate a trend report with insights for the team.
  *
- * Uso:
+ * Usage:
  *   npm run trend
  *   npm run trend -- --history-dir=test-results/history --days=14
  *   npm run trend -- --output=reports/weekly-quality.md
  *
  * Flags:
- *   --history-dir   Diretório com arquivos results-*.json (padrão: test-results/history)
- *   --output        Arquivo de saída do relatório (padrão: reports/quality-trend.md)
- *   --days          Janela de análise em dias (padrão: 7)
+ *   --history-dir   Directory with results-*.json files (default: test-results/history)
+ *   --output        Report output file (default: reports/quality-trend.md)
+ *   --days          Analysis window in days (default: 7)
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -23,7 +23,7 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-// ─── Tipos ─────────────────────────────────────────────────────────────────
+// ─── Types ─────────────────────────────────────────────────────────────────
 
 interface PlaywrightStats {
   expected: number;
@@ -100,7 +100,7 @@ function extractTopErrors(suites: PlaywrightSuite[], file = ''): string[] {
 }
 
 function parseTimestampFromFilename(filename: string): Date {
-  // Tenta extrair timestamp do nome: results-1712345678.json ou results-2024-04-05T...json
+  // Try to extract timestamp from name: results-1712345678.json or results-2024-04-05T...json
   const tsMatch = filename.match(/(\d{10,13})/);
   if (tsMatch) {
     const ts = parseInt(tsMatch[1], 10);
@@ -116,16 +116,16 @@ function loadMetrics(historyDir: string, days: number): RunMetrics[] {
   cutoff.setDate(cutoff.getDate() - days);
 
   if (!fs.existsSync(historyDir)) {
-    // Fallback: results.json atual
+    // Fallback: current results.json
     const single = 'test-results/results.json';
     if (!fs.existsSync(single)) {
-      throw new Error('Nenhum relatório encontrado. Execute os testes: npm test');
+      throw new Error('No report found. Run the tests: npm test');
     }
-    console.log(`⚠️  Usando ${single} (execução única). Adicione histórico em ${historyDir}/ para tendências reais.`);
+    console.log(`⚠️  Using ${single} (single run). Add history to ${historyDir}/ for real trends.`);
     const report: PlaywrightReport = JSON.parse(fs.readFileSync(single, 'utf-8'));
     const total = report.stats.expected + report.stats.unexpected + report.stats.skipped;
     return [{
-      runId: 'run-atual',
+      runId: 'current-run',
       timestamp: new Date(),
       total,
       passed: report.stats.expected,
@@ -142,7 +142,7 @@ function loadMetrics(historyDir: string, days: number): RunMetrics[] {
     .filter(f => f.endsWith('.json'))
     .sort();
 
-  console.log(`📂  Carregando ${files.length} execução(ões) de ${historyDir}...`);
+  console.log(`📂  Loading ${files.length} run(s) from ${historyDir}...`);
 
   const metrics: RunMetrics[] = [];
   for (const file of files) {
@@ -172,36 +172,36 @@ function loadMetrics(historyDir: string, days: number): RunMetrics[] {
 }
 
 function buildTrendTable(metrics: RunMetrics[]): string {
-  const header = '| Run | Data | Total | ✅ Passou | ❌ Falhou | 🔁 Flaky | Taxa | Duração |';
-  const separator = '|-----|------|-------|----------|----------|---------|------|---------|';
+  const header = '| Run | Date | Total | ✅ Passed | ❌ Failed | 🔁 Flaky | Rate | Duration |';
+  const separator = '|-----|------|-------|----------|----------|---------|------|----------|';
   const rows = metrics.map(m => {
-    const date = m.timestamp.toLocaleDateString('pt-BR');
+    const date = m.timestamp.toLocaleDateString('en-US');
     const duration = `${(m.durationMs / 1000).toFixed(0)}s`;
     return `| ${m.runId.substring(0, 20)} | ${date} | ${m.total} | ${m.passed} | ${m.failed} | ${m.flaky} | ${m.passRate}% | ${duration} |`;
   });
   return [header, separator, ...rows].join('\n');
 }
 
-// ─── Análise com Claude ────────────────────────────────────────────────────
+// ─── Claude analysis ───────────────────────────────────────────────────────
 
 async function generateTrendAnalysis(metrics: RunMetrics[]): Promise<string> {
   const client = new Anthropic();
 
-  const systemPrompt = `Você é um líder de QA analisando tendências de qualidade para um time de desenvolvimento.
-O projeto testa OrangeHRM em ambiente de demo compartilhado.
+  const systemPrompt = `You are a QA Lead analyzing quality trends for a development team.
+The project tests OrangeHRM in a shared demo environment.
 
-Forneça um relatório de tendência com:
-1. **Resumo executivo** — 2-3 frases sobre o estado geral da qualidade
-2. **Tendência de estabilidade** — está melhorando, piorando ou estável?
-3. **Alertas críticos** — se houver deterioração, aponte
-4. **Pontos positivos** — o que está funcionando bem
-5. **Recomendações** — 3 ações concretas para o próximo sprint
-6. **Métricas-chave** — passRate médio, pior run, melhor run
+Provide a trend report with:
+1. **Executive summary** — 2-3 sentences on the overall quality state
+2. **Stability trend** — is it improving, worsening, or stable?
+3. **Critical alerts** — if there is deterioration, flag it
+4. **Positive points** — what is working well
+5. **Recommendations** — 3 concrete actions for the next sprint
+6. **Key metrics** — average pass rate, worst run, best run
 
-Seja objetivo e direto. Use dados concretos para suportar as afirmações.`;
+Be objective and direct. Use concrete data to support statements.`;
 
   const metricsText = metrics.map(m =>
-    `Run ${m.runId} (${m.timestamp.toLocaleDateString('pt-BR')}): ${m.passed} passaram, ${m.failed} falharam, ${m.flaky} flaky — taxa: ${m.passRate}%${m.topErrors.length ? ` — erros: [${m.topErrors[0]?.substring(0, 80)}]` : ''}`
+    `Run ${m.runId} (${m.timestamp.toLocaleDateString('en-US')}): ${m.passed} passed, ${m.failed} failed, ${m.flaky} flaky — rate: ${m.passRate}%${m.topErrors.length ? ` — errors: [${m.topErrors[0]?.substring(0, 80)}]` : ''}`
   ).join('\n');
 
   const avgPassRate = metrics.length > 0
@@ -209,21 +209,21 @@ Seja objetivo e direto. Use dados concretos para suportar as afirmações.`;
     : 0;
 
   const trend = metrics.length > 1
-    ? metrics[metrics.length - 1].passRate > metrics[0].passRate ? '📈 Melhorando' : '📉 Piorando'
-    : 'Execução única';
+    ? metrics[metrics.length - 1].passRate > metrics[0].passRate ? '📈 Improving' : '📉 Degrading'
+    : 'Single run';
 
-  const userMessage = `Analise as tendências de qualidade dos últimos ${metrics.length} runs:
+  const userMessage = `Analyze the quality trends for the last ${metrics.length} runs:
 
-**Período:** ${metrics.length > 0 ? metrics[0].timestamp.toLocaleDateString('pt-BR') : 'N/A'} → ${metrics.length > 0 ? metrics[metrics.length - 1].timestamp.toLocaleDateString('pt-BR') : 'N/A'}
-**Taxa de sucesso média:** ${avgPassRate}%
-**Direção:** ${trend}
+**Period:** ${metrics.length > 0 ? metrics[0].timestamp.toLocaleDateString('en-US') : 'N/A'} → ${metrics.length > 0 ? metrics[metrics.length - 1].timestamp.toLocaleDateString('en-US') : 'N/A'}
+**Average success rate:** ${avgPassRate}%
+**Direction:** ${trend}
 
-**Dados por execução:**
+**Data per run:**
 ${metricsText}
 
-Gere um relatório de tendência executivo para o time.`;
+Generate an executive trend report for the team.`;
 
-  console.log('\n🤖  Claude gerando relatório de tendência...\n');
+  console.log('\n🤖  Claude generating trend report...\n');
 
   const stream = client.messages.stream({
     model: 'claude-opus-4-6',
@@ -253,24 +253,24 @@ function saveReport(metrics: RunMetrics[], analysis: string, outputPath: string)
     ? Math.round(metrics.reduce((s, m) => s + m.passRate, 0) / metrics.length)
     : 0;
 
-  const report = `# Relatório de Tendência de Qualidade
-Gerado em: ${new Date().toISOString()}
-Execuções analisadas: **${metrics.length}** | Taxa média de sucesso: **${avgPassRate}%**
+  const report = `# Quality Trend Report
+Generated at: ${new Date().toISOString()}
+Runs analyzed: **${metrics.length}** | Average success rate: **${avgPassRate}%**
 
-## Tabela de Tendência
+## Trend Table
 
 ${buildTrendTable(metrics)}
 
-## Análise do Claude
+## Claude Analysis
 
 ${analysis}
 
 ---
-*Gerado por QualityTrendReporterAgent — próxima execução recomendada em 7 dias*
+*Generated by QualityTrendReporterAgent — next recommended run in 7 days*
 `;
 
   fs.writeFileSync(outputPath, report, 'utf-8');
-  console.log(`📋  Relatório salvo: ${outputPath}\n`);
+  console.log(`📋  Report saved: ${outputPath}\n`);
 }
 
 // ─── Main ──────────────────────────────────────────────────────────────────
@@ -279,31 +279,31 @@ async function main() {
   const { historyDir, output, days } = parseArgs();
 
   console.log('\n📊  QualityTrendReporterAgent');
-  console.log(`   Janela: ${days} dias | Histórico: ${historyDir}\n`);
+  console.log(`   Window: ${days} days | History: ${historyDir}\n`);
 
   const metrics = loadMetrics(historyDir, days);
 
   if (metrics.length === 0) {
-    console.log(`⚠️  Nenhuma execução encontrada nos últimos ${days} dias.\n`);
+    console.log(`⚠️  No runs found in the last ${days} days.\n`);
     return;
   }
 
   const avgPassRate = Math.round(metrics.reduce((s, m) => s + m.passRate, 0) / metrics.length);
   const totalFailed = metrics.reduce((s, m) => s + m.failed, 0);
 
-  console.log(`✅  ${metrics.length} execução(ões) carregada(s)`);
-  console.log(`   Taxa média de sucesso: ${avgPassRate}%`);
-  console.log(`   Total de falhas no período: ${totalFailed}\n`);
+  console.log(`✅  ${metrics.length} run(s) loaded`);
+  console.log(`   Average success rate: ${avgPassRate}%`);
+  console.log(`   Total failures in period: ${totalFailed}\n`);
 
   const analysis = await generateTrendAnalysis(metrics);
   saveReport(metrics, analysis, output);
 
   console.log(`${'═'.repeat(60)}`);
-  console.log(`✅  Relatório gerado: ${output}`);
+  console.log(`✅  Report generated: ${output}`);
   console.log(`${'═'.repeat(60)}\n`);
 }
 
 main().catch(err => {
-  console.error('\n❌  Erro fatal:', err.message);
+  console.error('\n❌  Fatal error:', err.message);
   process.exit(1);
 });

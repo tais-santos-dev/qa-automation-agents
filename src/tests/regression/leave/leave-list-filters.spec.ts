@@ -1,40 +1,40 @@
 /**
  * leave-list-filters.spec.ts
  *
- * Suite de testes de regressão para filtros e comportamento da lista de licenças.
+ * Regression test suite for filters and leave list behavior.
  *
- * Estratégia:
- *  - Usa o projeto `chromium:authenticated` (storageState pré-carregado).
- *  - A fixture `leaveListPage` abre /leave/viewLeaveList automaticamente.
- *  - Valida filtros de data, reset, contagem de registros e estados da tabela.
+ * Strategy:
+ *  - Uses the `chromium:authenticated` project (pre-loaded storageState).
+ *  - The `leaveListPage` fixture opens /leave/viewLeaveList automatically.
+ *  - Validates date filters, reset, record count, and table states.
  *
- * Cenários cobertos:
- *  ✅ [Positivo]   Página carrega com título correto
- *  ✅ [Positivo]   Tabela visível após carregamento inicial
- *  ✅ [Positivo]   Contagem de registros é um número válido
- *  ✅ [Positivo]   Busca sem filtros obrigatórios mantém a página estável
- *  ✅ [Positivo]   Contagem válida após ciclo de search e reset
- *  ❌ [Negativo]   Múltiplos resets consecutivos mantêm a página estável
- *  ⚠️  [Edge Case] Múltiplas buscas consecutivas sem filtros são estáveis
+ * Scenarios covered:
+ *  ✅ [Positive]   Page loads with correct title
+ *  ✅ [Positive]   Table visible after initial load
+ *  ✅ [Positive]   Record count is a valid number
+ *  ✅ [Positive]   Search without required filters keeps the page stable
+ *  ✅ [Positive]   Valid count after search and reset cycle
+ *  ❌ [Negative]   Multiple consecutive resets keep the page stable
+ *  ⚠️  [Edge Case] Multiple consecutive searches without filters are stable
  */
 
 import { test, expect } from '../../../fixtures/test.fixture';
 import { PageTitle } from '../../../constants/Messages';
 
-// ─── Suite Principal ──────────────────────────────────────────────────────
+// ─── Main Suite ───────────────────────────────────────────────────────────
 
-test.describe('Leave — Filtros da Lista de Licenças (Regressão)', () => {
+test.describe('Leave — Leave List Filters (Regression)', () => {
 
   test.beforeEach(async ({ leaveListPage }) => {
     await leaveListPage.expectPageLoaded();
   });
 
-  // ─── Cenários Positivos ───────────────────────────────────────────────────
+  // ─── Positive Scenarios ───────────────────────────────────────────────────
 
-  test.describe('Positivo', () => {
+  test.describe('Positive', () => {
 
     test(
-      'deve exibir o título "Leave List" na página',
+      'should display the "Leave List" title on the page',
       { tag: ['@regression', '@leave'] },
       async ({ leaveListPage }) => {
         const title = await leaveListPage.getPageTitle();
@@ -43,7 +43,7 @@ test.describe('Leave — Filtros da Lista de Licenças (Regressão)', () => {
     );
 
     test(
-      'deve exibir a tabela de licenças visível após carregamento',
+      'should display the leave table visible after load',
       { tag: ['@regression', '@leave'] },
       async ({ leaveListPage }) => {
         await leaveListPage.expectTableVisible();
@@ -51,7 +51,7 @@ test.describe('Leave — Filtros da Lista de Licenças (Regressão)', () => {
     );
 
     test(
-      'deve retornar contagem de registros maior ou igual a zero',
+      'should return a record count greater than or equal to zero',
       { tag: ['@regression', '@leave'] },
       async ({ leaveListPage }) => {
         const count = await leaveListPage.getLeaveCount();
@@ -60,47 +60,47 @@ test.describe('Leave — Filtros da Lista de Licenças (Regressão)', () => {
     );
 
     test(
-      'não deve quebrar a aplicação ao executar busca sem nenhum filtro preenchido',
+      'should not crash the application when running a search with no filters filled',
       { tag: ['@regression', '@leave'] },
       async ({ leaveListPage }) => {
-        // Act — busca sem filtros (campos em branco)
+        // Act — search with empty fields
         await leaveListPage.search();
 
-        // Assert — página continua estável
+        // Assert — page remains stable
         await leaveListPage.expectPageLoaded();
         await leaveListPage.expectTableVisible();
       }
     );
 
     test(
-      'deve manter contagem válida após ciclo de search e reset',
+      'should maintain a valid count after a search and reset cycle',
       { tag: ['@regression', '@leave'] },
       async ({ leaveListPage }) => {
-        // Act — busca padrão e depois reset
+        // Act — default search and then reset
         await leaveListPage.search();
         await leaveListPage.reset();
 
-        // Assert — tabela continua carregada com contagem válida
+        // Assert — table remains loaded with a valid count
         const finalCount = await leaveListPage.getLeaveCount();
         expect(finalCount).toBeGreaterThanOrEqual(0);
       }
     );
   });
 
-  // ─── Cenários Negativos ───────────────────────────────────────────────────
+  // ─── Negative Scenarios ───────────────────────────────────────────────────
 
-  test.describe('Negativo', () => {
+  test.describe('Negative', () => {
 
     test(
-      'deve manter a página estável após múltiplos resets consecutivos',
+      'should keep the page stable after multiple consecutive resets',
       { tag: ['@regression', '@leave'] },
       async ({ leaveListPage }) => {
-        // Act — três resets consecutivos
+        // Act — three consecutive resets
         await leaveListPage.reset();
         await leaveListPage.reset();
         await leaveListPage.reset();
 
-        // Assert — página permanece estável e carregada
+        // Assert — page remains stable and loaded
         await leaveListPage.expectPageLoaded();
         await leaveListPage.expectTableVisible();
       }
@@ -112,15 +112,15 @@ test.describe('Leave — Filtros da Lista de Licenças (Regressão)', () => {
   test.describe('Edge Cases', () => {
 
     test(
-      'deve manter estado consistente após múltiplas buscas consecutivas sem filtros',
+      'should maintain consistent state after multiple consecutive searches without filters',
       { tag: ['@regression', '@leave'] },
       async ({ leaveListPage }) => {
-        // Act — três buscas sem filtros
+        // Act — three searches without filters
         await leaveListPage.search();
         await leaveListPage.search();
         await leaveListPage.search();
 
-        // Assert — tabela ainda carregada com contagem válida
+        // Assert — table still loaded with a valid count
         await leaveListPage.expectTableVisible();
         const finalCount = await leaveListPage.getLeaveCount();
         expect(finalCount).toBeGreaterThanOrEqual(0);

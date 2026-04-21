@@ -1,10 +1,10 @@
 /**
  * DashboardPage.ts
  *
- * Page Object para a página de Dashboard do OrangeHRM.
- * Encapsula todas as interações em /web/index.php/dashboard/index.
+ * Page Object for the OrangeHRM Dashboard page.
+ * Encapsulates all interactions at /web/index.php/dashboard/index.
  *
- * Princípio: expõe ações semânticas, não locators brutos.
+ * Principle: exposes semantic actions, not raw locators.
  */
 import { Page, Locator, expect } from '@playwright/test';
 import { BasePage } from '../utils/BasePage';
@@ -42,13 +42,13 @@ export class DashboardPage extends BasePage {
     super(page);
   }
 
-  // ─── Navegação ────────────────────────────────────────────────────────────
+  // ─── Navigation ───────────────────────────────────────────────────────────
 
   async open(): Promise<void> {
     await this.navigate(AppRoute.DASHBOARD);
   }
 
-  // ─── Leitores ─────────────────────────────────────────────────────────────
+  // ─── Readers ──────────────────────────────────────────────────────────────
 
   async getWidgetCount(): Promise<number> {
     await this.dashboardWidgets.first().waitFor({ state: 'visible' });
@@ -64,7 +64,7 @@ export class DashboardPage extends BasePage {
     return this.getText(this.pageTitle);
   }
 
-  // ─── Asserções ────────────────────────────────────────────────────────────
+  // ─── Assertions ───────────────────────────────────────────────────────────
 
   async expectDashboardLoaded(): Promise<void> {
     await this.expectUrlContains(AppRoute.DASHBOARD);

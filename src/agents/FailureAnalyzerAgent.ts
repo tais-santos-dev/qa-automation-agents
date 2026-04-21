@@ -1,16 +1,16 @@
 /**
  * FailureAnalyzerAgent.ts
  *
- * Agente AI que lê o relatório JSON do Playwright, identifica falhas e usa
- * a API do Claude para diagnosticar cada falha e sugerir correções.
+ * AI agent that reads the Playwright JSON report, identifies failures, and uses
+ * the Claude API to diagnose each failure and suggest fixes.
  *
- * Uso:
+ * Usage:
  *   npx ts-node src/agents/FailureAnalyzerAgent.ts
  *   npx ts-node src/agents/FailureAnalyzerAgent.ts --run-tests
  *
  * Flags:
- *   --run-tests   Executa os testes antes de analisar (gera results.json fresco)
- *   --project     Filtra por projeto Playwright (ex: --project=chromium:unauthenticated)
+ *   --run-tests   Runs the tests before analyzing (generates a fresh results.json)
+ *   --project     Filters by Playwright project (e.g., --project=chromium:unauthenticated)
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -18,7 +18,7 @@ import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// ─── Tipos do relatório JSON do Playwright ─────────────────────────────────
+// ─── Playwright JSON report types ──────────────────────────────────────────
 
 interface PlaywrightError {
   message: string;
@@ -70,25 +70,25 @@ function parseArgs() {
 
 function runTests(project?: string) {
   const projectFlag = project ? ` --project="${project}"` : '';
-  console.log(`\n▶  Executando testes${project ? ` (${project})` : ''}...\n`);
+  console.log(`\n▶  Running tests${project ? ` (${project})` : ''}...\n`);
   try {
     execSync(`npx playwright test${projectFlag}`, { stdio: 'inherit' });
   } catch {
-    // Playwright retorna exit code != 0 quando há falhas — isso é esperado
+    // Playwright returns exit code != 0 when there are failures — this is expected
   }
 }
 
 function loadReport(): PlaywrightReport {
   if (!fs.existsSync(RESULTS_PATH)) {
     throw new Error(
-      `Relatório não encontrado em ${RESULTS_PATH}.\n` +
-      'Execute os testes primeiro com --run-tests ou rode: npx playwright test'
+      `Report not found at ${RESULTS_PATH}.\n` +
+      'Run the tests first with --run-tests or run: npx playwright test'
     );
   }
   return JSON.parse(fs.readFileSync(RESULTS_PATH, 'utf-8'));
 }
 
-// ─── Extração de falhas ────────────────────────────────────────────────────
+// ─── Failure extraction ────────────────────────────────────────────────────
 
 interface FailedTest {
   title: string;
@@ -103,12 +103,12 @@ function extractFailures(suites: PlaywrightSuite[], file = ''): FailedTest[] {
   for (const suite of suites) {
     const currentFile = suite.file ?? file;
 
-    // Recursão em sub-suites
+    // Recurse into sub-suites
     if (suite.suites?.length) {
       failures.push(...extractFailures(suite.suites, currentFile));
     }
 
-    // Specs (testes folha)
+    // Leaf specs (tests)
     for (const spec of suite.specs ?? []) {
       for (const result of spec.results) {
         if (result.status === 'failed' || result.status === 'timedOut') {
@@ -127,26 +127,26 @@ function extractFailures(suites: PlaywrightSuite[], file = ''): FailedTest[] {
   return failures;
 }
 
-// ─── Análise com Claude ────────────────────────────────────────────────────
+// ─── Claude analysis ───────────────────────────────────────────────────────
 
-const FAILURE_ANALYZER_SYSTEM_PROMPT = `Você é um engenheiro sênior de QA especializado em Playwright e TypeScript.
-O projeto é uma automação de testes para OrangeHRM (https://opensource-demo.orangehrmlive.com).
+const FAILURE_ANALYZER_SYSTEM_PROMPT = `You are a senior QA engineer specialized in Playwright and TypeScript.
+The project is a test automation suite for OrangeHRM (https://opensource-demo.orangehrmlive.com).
 
-Arquitetura do projeto:
-- Page Object Model com BasePage e BaseComponent como classes base
-- Fixtures customizadas do Playwright (loginPage, pimPage, addEmployeePage, sidebar, topbar)
-- Constantes em enums: AppRoute, ErrorMessage, SuccessMessage, SidebarMenu
-- Auth salva em auth/admin-storage-state.json via global-setup.ts
-- Timeout por teste: 45s | Timeout por assertion: 10s | Retries em CI: 2
+Project architecture:
+- Page Object Model with BasePage and BaseComponent as base classes
+- Custom Playwright fixtures (loginPage, pimPage, addEmployeePage, sidebar, topbar)
+- Constants in enums: AppRoute, ErrorMessage, SuccessMessage, SidebarMenu
+- Auth stored in auth/admin-storage-state.json via global-setup.ts
+- Test timeout: 45s | Assertion timeout: 10s | CI retries: 2
 
-Para cada falha, forneça:
-1. **Tipo** — classifique: locator quebrado / timeout / assertion / auth / race condition / outro
-2. **Causa raiz** — explicação objetiva em 1-2 frases
-3. **Arquivo e linha** — onde corrigir (se identificável pelo stack)
-4. **Correção** — código antes/depois pronto para aplicar
-5. **Prevenção** — como evitar recorrência
+For each failure, provide:
+1. **Type** — classify: broken locator / timeout / assertion / auth / race condition / other
+2. **Root cause** — objective explanation in 1-2 sentences
+3. **File and line** — where to fix (if identifiable from the stack)
+4. **Fix** — before/after code ready to apply
+5. **Prevention** — how to avoid recurrence
 
-Seja direto e específico. Não repita o stack trace completo na resposta.` as const;
+Be direct and specific. Do not repeat the full stack trace in the response.` as const;
 
 async function analyzeFailures(client: Anthropic, failures: FailedTest[]): Promise<void> {
   for (let i = 0; i < failures.length; i++) {
@@ -156,16 +156,16 @@ async function analyzeFailures(client: Anthropic, failures: FailedTest[]): Promi
     console.log(`📁  ${failure.file}`);
     console.log(`${'─'.repeat(60)}\n`);
 
-    const userMessage = `Analise esta falha de teste Playwright:
+    const userMessage = `Analyze this Playwright test failure:
 
-**Teste:** ${failure.title}
-**Arquivo:** ${failure.file}
+**Test:** ${failure.title}
+**File:** ${failure.file}
 
-**Erro:**
+**Error:**
 ${failure.error}
 
 **Stack trace:**
-${failure.stack || '(não disponível)'}`;
+${failure.stack || '(not available)'}`;
 
     const stream = client.messages.stream({
       model: 'claude-opus-4-6',
@@ -197,35 +197,35 @@ async function main() {
     runTests(project);
   }
 
-  console.log('\n🔍  Carregando relatório de testes...');
+  console.log('\n🔍  Loading test report...');
   const report = loadReport();
 
   const { stats } = report;
   console.log(
-    `\n📊  Resultados: ` +
-    `✅ ${stats.expected} passou | ` +
-    `❌ ${stats.unexpected} falhou | ` +
-    `⏭  ${stats.skipped} pulado | ` +
+    `\n📊  Results: ` +
+    `✅ ${stats.expected} passed | ` +
+    `❌ ${stats.unexpected} failed | ` +
+    `⏭  ${stats.skipped} skipped | ` +
     `🔁 ${stats.flaky} flaky`
   );
 
   const failures = extractFailures(report.suites);
 
   if (failures.length === 0) {
-    console.log('\n✅  Nenhuma falha encontrada. Todos os testes passaram!\n');
+    console.log('\n✅  No failures found. All tests passed!\n');
     return;
   }
 
-  console.log(`\n🤖  Analisando ${failures.length} falha(s) com Claude...\n`);
+  console.log(`\n🤖  Analyzing ${failures.length} failure(s) with Claude...\n`);
   const client = new Anthropic();
   await analyzeFailures(client, failures);
 
   console.log(`${'═'.repeat(60)}`);
-  console.log(`✅  Análise concluída. ${failures.length} falha(s) diagnosticada(s).`);
+  console.log(`✅  Analysis complete. ${failures.length} failure(s) diagnosed.`);
   console.log(`${'═'.repeat(60)}\n`);
 }
 
 main().catch(err => {
-  console.error('\n❌  Erro fatal:', err.message);
+  console.error('\n❌  Fatal error:', err.message);
   process.exit(1);
 });

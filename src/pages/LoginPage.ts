@@ -1,10 +1,10 @@
 /**
  * LoginPage.ts
  *
- * Page Object para a página de Login do OrangeHRM.
- * Encapsula todas as interações em /web/index.php/auth/login.
+ * Page Object for the OrangeHRM Login page.
+ * Encapsulates all interactions at /web/index.php/auth/login.
  *
- * Princípio: expõe ações semânticas, não locators brutos.
+ * Principle: exposes semantic actions, not raw locators.
  */
 import { Page, expect } from '@playwright/test';
 import { BasePage } from '../utils/BasePage';
@@ -36,18 +36,18 @@ export class LoginPage extends BasePage {
     super(page);
   }
 
-  // ─── Navegação ────────────────────────────────────────────────────────────
+  // ─── Navigation ───────────────────────────────────────────────────────────
 
-  /** Abre a página de login diretamente via URL. */
+  /** Opens the login page directly via URL. */
   async open(): Promise<void> {
     await this.navigate(AppRoute.LOGIN);
   }
 
-  // ─── Ações ────────────────────────────────────────────────────────────────
+  // ─── Actions ──────────────────────────────────────────────────────────────
 
   /**
-   * Preenche as credenciais e submete o formulário de login.
-   * Aguarda networkidle para garantir que o Dashboard esteja carregado.
+   * Fills in credentials and submits the login form.
+   * Waits for networkidle to ensure the Dashboard is loaded.
    */
   async login(username: string, password: string): Promise<void> {
     await this.fill(this.usernameInput, username);
@@ -57,16 +57,16 @@ export class LoginPage extends BasePage {
   }
 
   /**
-   * Submete o formulário sem preencher nenhum campo.
-   * Útil para validar erros de campo obrigatório.
+   * Submits the form without filling in any fields.
+   * Useful to validate required field errors.
    */
   async submitEmpty(): Promise<void> {
     await this.click(this.loginButton);
   }
 
   /**
-   * Preenche apenas o campo username e submete.
-   * Útil para testar validação isolada do campo password.
+   * Fills only the username field and submits.
+   * Useful to test isolated validation of the password field.
    */
   async fillOnlyUsername(username: string): Promise<void> {
     await this.fill(this.usernameInput, username);
@@ -74,18 +74,18 @@ export class LoginPage extends BasePage {
   }
 
   /**
-   * Preenche apenas o campo password e submete.
-   * Útil para testar validação isolada do campo username.
+   * Fills only the password field and submits.
+   * Useful to test isolated validation of the username field.
    */
   async fillOnlyPassword(password: string): Promise<void> {
     await this.fill(this.passwordInput, password);
     await this.click(this.loginButton);
   }
 
-  // ─── Leitores ─────────────────────────────────────────────────────────────
+  // ─── Readers ──────────────────────────────────────────────────────────────
 
   /**
-   * Retorna o texto da mensagem de erro exibida após falha no login.
+   * Returns the error message text displayed after a failed login.
    */
   async getLoginErrorMessage(): Promise<string> {
     await this.waitForVisible(this.loginErrorAlert);
@@ -93,17 +93,17 @@ export class LoginPage extends BasePage {
   }
 
   /**
-   * Retorna todos os textos de erro inline dos campos (ex: "Required").
+   * Returns all inline field error texts (e.g., "Required").
    */
   async getInputErrors(): Promise<string[]> {
     await this.inputErrorMessages.first().waitFor({ state: 'visible' });
     return this.inputErrorMessages.allInnerTexts();
   }
 
-  // ─── Asserções ────────────────────────────────────────────────────────────
+  // ─── Assertions ───────────────────────────────────────────────────────────
 
   /**
-   * Asserta que a página de login está carregada (URL + título).
+   * Asserts the login page is loaded (URL + title).
    */
   async expectOnLoginPage(): Promise<void> {
     await expect(this.page).toHaveURL(/auth\/login/);
@@ -111,25 +111,25 @@ export class LoginPage extends BasePage {
   }
 
   /**
-   * Asserta que o usuário foi redirecionado ao Dashboard após o login.
+   * Asserts the user was redirected to the Dashboard after login.
    */
   async expectLoginSuccess(): Promise<void> {
     await this.expectUrlContains('dashboard');
   }
 
   /**
-   * Asserta que o alerta de erro contém a mensagem esperada.
-   * Usa web-first assertion com retry automático do Playwright.
+   * Asserts the error alert contains the expected message.
+   * Uses Playwright's web-first assertion with automatic retry.
    */
   async expectLoginError(expectedMessage: string): Promise<void> {
     await expect(this.loginErrorAlert).toContainText(expectedMessage);
   }
 
   /**
-   * Asserta que os campos de input estão com o estado visual de erro
-   * (classe CSS `oxd-input--error` aplicada pelo framework).
+   * Asserts the input fields are in the visual error state
+   * (CSS class `oxd-input--error` applied by the framework).
    *
-   * @param fields - quais campos verificar ('username' | 'password' | 'both')
+   * @param fields - which fields to check ('username' | 'password' | 'both')
    */
   async expectInputsHaveErrorState(fields: 'username' | 'password' | 'both' = 'both'): Promise<void> {
     if (fields === 'username' || fields === 'both') {

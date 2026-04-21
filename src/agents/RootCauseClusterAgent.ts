@@ -1,19 +1,19 @@
 /**
  * RootCauseClusterAgent.ts
  *
- * Agente AI que agrupa falhas de CI por padrão de erro e identifica causas raiz comuns.
- * Analisa múltiplas execuções do relatório JSON do Playwright e detecta clusters
- * de falhas relacionadas, priorizando as mais críticas para o time.
+ * AI agent that groups CI failures by error pattern and identifies common root causes.
+ * Analyzes multiple Playwright JSON report runs and detects clusters of related failures,
+ * prioritizing the most critical ones for the team.
  *
- * Uso:
+ * Usage:
  *   npm run cluster
  *   npm run cluster -- --history-dir=test-results/history
  *   npm run cluster -- --min-cluster=3
  *
  * Flags:
- *   --history-dir   Diretório com arquivos results-*.json (padrão: test-results/history)
- *   --min-cluster   Mínimo de falhas para formar um cluster (padrão: 2)
- *   --output        Arquivo de saída do relatório (padrão: reports/root-cause-clusters.md)
+ *   --history-dir   Directory with results-*.json files (default: test-results/history)
+ *   --min-cluster   Minimum failures to form a cluster (default: 2)
+ *   --output        Report output file (default: reports/root-cause-clusters.md)
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -23,7 +23,7 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-// ─── Tipos ─────────────────────────────────────────────────────────────────
+// ─── Types ─────────────────────────────────────────────────────────────────
 
 interface PlaywrightError {
   message: string;
@@ -113,11 +113,11 @@ function extractFailures(suites: PlaywrightSuite[], runId: string, file = ''): F
 function loadAllFailures(historyDir: string): FailureRecord[] {
   const all: FailureRecord[] = [];
 
-  // Tentar diretório de histórico primeiro
+  // Try history directory first
   if (fs.existsSync(historyDir)) {
     const files = fs.readdirSync(historyDir).filter(f => f.endsWith('.json')).sort();
     if (files.length > 0) {
-      console.log(`📂  Carregando ${files.length} execução(ões) de ${historyDir}...`);
+      console.log(`📂  Loading ${files.length} run(s) from ${historyDir}...`);
       for (const file of files) {
         const runId = path.basename(file, '.json');
         const report: PlaywrightReport = JSON.parse(fs.readFileSync(path.join(historyDir, file), 'utf-8'));
@@ -127,16 +127,16 @@ function loadAllFailures(historyDir: string): FailureRecord[] {
     }
   }
 
-  // Fallback: results.json atual
+  // Fallback: current results.json
   const single = 'test-results/results.json';
   if (fs.existsSync(single)) {
-    console.log(`⚠️  Usando ${single} (execução única). Para análise multi-run, adicione arquivos em ${historyDir}/`);
+    console.log(`⚠️  Using ${single} (single run). For multi-run analysis, add files to ${historyDir}/`);
     const report: PlaywrightReport = JSON.parse(fs.readFileSync(single, 'utf-8'));
     all.push(...extractFailures(report.suites, 'run-1'));
     return all;
   }
 
-  throw new Error('Nenhum relatório encontrado. Execute os testes primeiro: npm test');
+  throw new Error('No report found. Run the tests first: npm test');
 }
 
 function normalizeError(message: string): string {
@@ -163,15 +163,15 @@ function clusterFailures(failures: FailureRecord[], minCluster: number): Failure
   for (const [signature, records] of clusterMap) {
     if (records.length < minCluster) continue;
 
-    // Identificar padrão do cluster
-    let pattern = 'Erro desconhecido';
+    // Identify cluster pattern
+    let pattern = 'Unknown error';
     const msg = signature.toLowerCase();
     if (msg.includes('timeout')) pattern = 'Timeout';
-    else if (msg.includes('locator') || msg.includes('strict mode') || msg.includes('element')) pattern = 'Locator/Seletor';
-    else if (msg.includes('expect') || msg.includes('tobevisible') || msg.includes('tohave')) pattern = 'Assertion falhou';
-    else if (msg.includes('auth') || msg.includes('login') || msg.includes('unauthorized')) pattern = 'Autenticação';
-    else if (msg.includes('network') || msg.includes('net::')) pattern = 'Erro de rede';
-    else if (msg.includes('navigation') || msg.includes('goto')) pattern = 'Navegação';
+    else if (msg.includes('locator') || msg.includes('strict mode') || msg.includes('element')) pattern = 'Locator/Selector';
+    else if (msg.includes('expect') || msg.includes('tobevisible') || msg.includes('tohave')) pattern = 'Assertion failed';
+    else if (msg.includes('auth') || msg.includes('login') || msg.includes('unauthorized')) pattern = 'Authentication';
+    else if (msg.includes('network') || msg.includes('net::')) pattern = 'Network error';
+    else if (msg.includes('navigation') || msg.includes('goto')) pattern = 'Navigation';
 
     clusters.push({ pattern, failures: records, errorSignature: signature });
   }
@@ -179,35 +179,35 @@ function clusterFailures(failures: FailureRecord[], minCluster: number): Failure
   return clusters.sort((a, b) => b.failures.length - a.failures.length);
 }
 
-// ─── Análise com Claude ────────────────────────────────────────────────────
+// ─── Claude analysis ───────────────────────────────────────────────────────
 
 async function analyzeClusters(clusters: FailureCluster[]): Promise<string> {
   const client = new Anthropic();
 
-  const systemPrompt = `Você é um engenheiro sênior de QA especializado em análise de falhas Playwright.
-O projeto testa OrangeHRM (https://opensource-demo.orangehrmlive.com) — demo compartilhado, instável.
+  const systemPrompt = `You are a senior QA engineer specialized in Playwright failure analysis.
+The project tests OrangeHRM (https://opensource-demo.orangehrmlive.com) — a shared, unstable demo.
 
-Para cada cluster de falhas, identifique:
-1. **Causa raiz provável** — o que está causando esse grupo de falhas
-2. **Impacto** — crítico / alto / médio / baixo
-3. **Ação recomendada** — o que o time deve fazer primeiro
-4. **Esforço de correção** — horas estimadas
+For each failure cluster, identify:
+1. **Likely root cause** — what is causing this group of failures
+2. **Impact** — critical / high / medium / low
+3. **Recommended action** — what the team should do first
+4. **Fix effort** — estimated hours
 
-Seja direto e específico. Priorize pela criticidade e frequência.`;
+Be direct and specific. Prioritize by criticality and frequency.`;
 
-  const userMessage = `Analise estes clusters de falhas de CI do Playwright:
+  const userMessage = `Analyze these Playwright CI failure clusters:
 
-${clusters.map((c, i) => `## Cluster ${i + 1}: ${c.pattern} (${c.failures.length} ocorrências)
-**Assinatura do erro:** ${c.errorSignature}
-**Testes afetados:**
+${clusters.map((c, i) => `## Cluster ${i + 1}: ${c.pattern} (${c.failures.length} occurrences)
+**Error signature:** ${c.errorSignature}
+**Affected tests:**
 ${[...new Set(c.failures.map(f => f.testTitle))].slice(0, 5).map(t => `  - ${t}`).join('\n')}
-**Arquivos:** ${[...new Set(c.failures.map(f => f.file))].join(', ')}
-**Runs afetados:** ${[...new Set(c.failures.map(f => f.runId))].join(', ')}
+**Files:** ${[...new Set(c.failures.map(f => f.file))].join(', ')}
+**Affected runs:** ${[...new Set(c.failures.map(f => f.runId))].join(', ')}
 `).join('\n')}
 
-Forneça análise de causa raiz e plano de ação para cada cluster.`;
+Provide root cause analysis and action plan for each cluster.`;
 
-  console.log('\n🤖  Claude analisando clusters de falhas...\n');
+  console.log('\n🤖  Claude analyzing failure clusters...\n');
 
   const stream = client.messages.stream({
     model: 'claude-opus-4-6',
@@ -233,32 +233,32 @@ function saveReport(clusters: FailureCluster[], analysis: string, outputPath: st
   const dir = path.dirname(outputPath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-  const report = `# Relatório de Clusters de Causa Raiz
-Gerado em: ${new Date().toISOString()}
-Total de clusters: **${clusters.length}** | Total de falhas agrupadas: **${clusters.reduce((s, c) => s + c.failures.length, 0)}**
+  const report = `# Root Cause Cluster Report
+Generated at: ${new Date().toISOString()}
+Total clusters: **${clusters.length}** | Total grouped failures: **${clusters.reduce((s, c) => s + c.failures.length, 0)}**
 
-## Resumo dos Clusters
+## Cluster Summary
 
-| # | Padrão | Ocorrências | Testes Únicos |
-|---|--------|-------------|---------------|
+| # | Pattern | Occurrences | Unique Tests |
+|---|---------|-------------|--------------|
 ${clusters.map((c, i) => `| ${i + 1} | ${c.pattern} | ${c.failures.length} | ${new Set(c.failures.map(f => f.testTitle)).size} |`).join('\n')}
 
-## Análise do Claude
+## Claude Analysis
 
 ${analysis}
 
-## Dados Brutos dos Clusters
+## Raw Cluster Data
 
 ${clusters.map((c, i) => `### Cluster ${i + 1}: ${c.pattern}
-- **Assinatura:** \`${c.errorSignature}\`
-- **Ocorrências:** ${c.failures.length}
-- **Testes afetados:**
+- **Signature:** \`${c.errorSignature}\`
+- **Occurrences:** ${c.failures.length}
+- **Affected tests:**
 ${[...new Set(c.failures.map(f => f.testTitle))].map(t => `  - ${t}`).join('\n')}
 `).join('\n')}
 `;
 
   fs.writeFileSync(outputPath, report, 'utf-8');
-  console.log(`📋  Relatório salvo: ${outputPath}\n`);
+  console.log(`📋  Report saved: ${outputPath}\n`);
 }
 
 // ─── Main ──────────────────────────────────────────────────────────────────
@@ -267,37 +267,37 @@ async function main() {
   const { historyDir, minCluster, output } = parseArgs();
 
   console.log('\n🔍  RootCauseClusterAgent');
-  console.log(`   Mín. por cluster: ${minCluster} | Histórico: ${historyDir}\n`);
+  console.log(`   Min. per cluster: ${minCluster} | History: ${historyDir}\n`);
 
   const failures = loadAllFailures(historyDir);
-  console.log(`\n✅  ${failures.length} falha(s) carregada(s) de todas as execuções.\n`);
+  console.log(`\n✅  ${failures.length} failure(s) loaded from all runs.\n`);
 
   if (failures.length === 0) {
-    console.log('✅  Nenhuma falha encontrada nos relatórios.\n');
+    console.log('✅  No failures found in the reports.\n');
     return;
   }
 
   const clusters = clusterFailures(failures, minCluster);
 
   if (clusters.length === 0) {
-    console.log(`⚠️  Nenhum cluster com ${minCluster}+ falhas. Tente --min-cluster=1\n`);
+    console.log(`⚠️  No cluster with ${minCluster}+ failures. Try --min-cluster=1\n`);
     return;
   }
 
-  console.log(`📊  ${clusters.length} cluster(s) identificado(s):\n`);
+  console.log(`📊  ${clusters.length} cluster(s) identified:\n`);
   clusters.forEach((c, i) => {
-    console.log(`   ${i + 1}. [${c.pattern}] ${c.failures.length} falhas — "${c.errorSignature.substring(0, 60)}..."`);
+    console.log(`   ${i + 1}. [${c.pattern}] ${c.failures.length} failures — "${c.errorSignature.substring(0, 60)}..."`);
   });
 
   const analysis = await analyzeClusters(clusters);
   saveReport(clusters, analysis, output);
 
   console.log(`${'═'.repeat(60)}`);
-  console.log(`✅  Análise concluída. ${clusters.length} cluster(s) diagnosticado(s).`);
+  console.log(`✅  Analysis complete. ${clusters.length} cluster(s) diagnosed.`);
   console.log(`${'═'.repeat(60)}\n`);
 }
 
 main().catch(err => {
-  console.error('\n❌  Erro fatal:', err.message);
+  console.error('\n❌  Fatal error:', err.message);
   process.exit(1);
 });
